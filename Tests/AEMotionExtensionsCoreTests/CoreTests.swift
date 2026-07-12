@@ -24,5 +24,24 @@ final class CoreTests: XCTestCase {
         let b = CameraShakeGenerator.samples(count: 3, amplitude: 10, decay: 0.8, seed: 9)
         XCTAssertEqual(a.map(\.x), b.map(\.x)); XCTAssertEqual(a.map(\.y), b.map(\.y))
     }
-    func testToolRegistryContainsNineTools() { XCTAssertEqual(ToolRegistry.all.count, 9) }
+    func testToolRegistryContainsFunctionalTools() {
+        XCTAssertEqual(ToolRegistry.all.count, 11)
+        XCTAssertTrue(ToolRegistry.all.contains { $0.id == "speed.remap" })
+        XCTAssertTrue(ToolRegistry.all.contains { $0.id == "host.diagnostics" })
+    }
+    func testConstantSpeedCurve() throws {
+        let curve = try SpeedCurve.constant(duration: 3, velocity: 2)
+        XCTAssertEqual(curve.velocity(at: 1.5), 2, accuracy: 1e-9)
+        XCTAssertEqual(curve.sourceTime(at: 1.5), 3, accuracy: 1e-6)
+    }
+    func testReverseSpeedCurve() throws {
+        let curve = try SpeedCurve.reverse(sourceDuration: 5)
+        XCTAssertEqual(curve.sourceTime(at: 0), 5, accuracy: 1e-9)
+        XCTAssertEqual(curve.sourceTime(at: 2), 3, accuracy: 1e-6)
+        XCTAssertEqual(curve.sourceTime(at: 5), 0, accuracy: 1e-6)
+    }
+    func testFreezeSpeedCurve() throws {
+        let curve = try SpeedCurve.constant(duration: 2, velocity: 0, sourceOrigin: 1.25)
+        XCTAssertEqual(curve.sourceTime(at: 1.8), 1.25, accuracy: 1e-9)
+    }
 }
