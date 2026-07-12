@@ -1,0 +1,24 @@
+name: Build iOS Extensions Framework
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve package
+        run: swift package resolve
+      - name: Run core tests
+        run: swift test
+      - name: Build iOS framework
+        run: ./scripts/build-ios-framework.sh
+      - name: Collect products
+        run: |
+          mkdir -p artifacts
+          find build/DerivedData/Build/Products -name 'AEMotionExtensionsHost.framework' -type d -exec ditto -c -k --sequesterRsrc --keepParent {} artifacts/AEMotionExtensionsHost-framework.zip \;
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AEMotionExtensionsHost-iOS
+          path: artifacts/*
