@@ -188,6 +188,102 @@ final class CategoryCollectionProxy: NSObject, UICollectionViewDataSource, UICol
         ) ?? true
     }
 
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        shouldDeselectItemAt indexPath: IndexPath
+    ) -> Bool {
+        if isExtensionPath(indexPath) { return true }
+        return originalDelegate?.collectionView?(
+            collectionView,
+            shouldDeselectItemAt: originalPath(indexPath)
+        ) ?? true
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        didDeselectItemAt indexPath: IndexPath
+    ) {
+        guard !isExtensionPath(indexPath) else { return }
+        originalDelegate?.collectionView?(
+            collectionView,
+            didDeselectItemAt: originalPath(indexPath)
+        )
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        shouldHighlightItemAt indexPath: IndexPath
+    ) -> Bool {
+        if isExtensionPath(indexPath) { return true }
+        return originalDelegate?.collectionView?(
+            collectionView,
+            shouldHighlightItemAt: originalPath(indexPath)
+        ) ?? true
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        didHighlightItemAt indexPath: IndexPath
+    ) {
+        guard !isExtensionPath(indexPath) else { return }
+        originalDelegate?.collectionView?(
+            collectionView,
+            didHighlightItemAt: originalPath(indexPath)
+        )
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        didUnhighlightItemAt indexPath: IndexPath
+    ) {
+        guard !isExtensionPath(indexPath) else { return }
+        originalDelegate?.collectionView?(
+            collectionView,
+            didUnhighlightItemAt: originalPath(indexPath)
+        )
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        willDisplay cell: UICollectionViewCell,
+        forItemAt indexPath: IndexPath
+    ) {
+        // Never send the synthetic Extensions cell to Alight Motion's private
+        // delegate. Every stock item after the insertion point is translated
+        // back by one before the original delegate sees it.
+        guard !isExtensionPath(indexPath) else { return }
+        originalDelegate?.collectionView?(
+            collectionView,
+            willDisplay: cell,
+            forItemAt: originalPath(indexPath)
+        )
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        didEndDisplaying cell: UICollectionViewCell,
+        forItemAt indexPath: IndexPath
+    ) {
+        guard !isExtensionPath(indexPath) else { return }
+        originalDelegate?.collectionView?(
+            collectionView,
+            didEndDisplaying: cell,
+            forItemAt: originalPath(indexPath)
+        )
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        canFocusItemAt indexPath: IndexPath
+    ) -> Bool {
+        if isExtensionPath(indexPath) { return true }
+        return originalDelegate?.collectionView?(
+            collectionView,
+            canFocusItemAt: originalPath(indexPath)
+        ) ?? true
+    }
+
     func collectionView(
         _ collectionView: UICollectionView,
         layout collectionViewLayout: UICollectionViewLayout,
@@ -215,13 +311,30 @@ final class CategoryCollectionProxy: NSObject, UICollectionViewDataSource, UICol
         return CGSize(width: 120, height: 110)
     }
 
+    private func isUnsafeForwardedItemSelector(_ selector: Selector) -> Bool {
+        let name = NSStringFromSelector(selector).lowercased()
+        // Unknown optional/private callbacks carrying an item index path cannot
+        // be forwarded verbatim after inserting a synthetic cell. Returning
+        // false from responds(to:) makes UIKit skip those optional callbacks
+        // instead of sending an out-of-range shifted index path to the app.
+        return name.contains("indexpath") ||
+            name.contains("foritemat") ||
+            name.contains("itematindex")
+    }
+
     override func responds(to selector: Selector!) -> Bool {
         if super.responds(to: selector) { return true }
+        guard let selector else { return false }
+        if isUnsafeForwardedItemSelector(selector) { return false }
         if originalDataSource?.responds(to: selector) == true { return true }
         return originalDelegate?.responds(to: selector) == true
     }
 
     override func forwardingTarget(for selector: Selector!) -> Any? {
+        guard let selector else { return super.forwardingTarget(for: selector) }
+        if isUnsafeForwardedItemSelector(selector) {
+            return super.forwardingTarget(for: selector)
+        }
         if originalDelegate?.responds(to: selector) == true {
             return originalDelegate
         }

@@ -29,3 +29,12 @@ v1.5.3 queried `categoriesCollectionViewHeightConst` with KVC. On app builds
 without that exact Objective-C key, UIKit raises `NSUnknownKeyException` while
 opening Add Effects. v1.5.4 resolves the getter/backing ivar through the Objective-C
 runtime and falls back to scrolling when the constraint is unavailable.
+
+### v1.5.5 shifted delegate index-path fix
+
+The device crash report showed `UICollectionView willDisplay` reaching Alight
+Motion with the synthetic collection index path. v1.5.5 translates stock item
+paths back to the original model for display, selection, highlight, deselection,
+and focus callbacks. The synthetic Extensions cell is never forwarded. Unknown
+optional/private item-index-path callbacks are not advertised to UIKit, avoiding
+untranslated shifted paths.
