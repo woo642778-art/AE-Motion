@@ -2,8 +2,10 @@ import Foundation
 
 public enum ToolRegistry {
     public static let all: [ToolDescriptor] = [
-        .init(id: "speed.remap", title: "Speed Remap Studio", subtitle: "Velocity graph, reverse, freeze and video speed keyframes", section: .extensions),
-        .init(id: "easing.curve", title: "Easing Curve Generator", subtitle: "Generate motion curves and sampled keyframes", section: .extensions),
+        .init(id: "speed.remap", title: "Speed Remap Studio", subtitle: "Interactive velocity graph, live preview, Photos import and pitch-preserved audio", section: .extensions),
+        .init(id: "easing.curve", title: "Easing Curve Generator", subtitle: "Flow-style editable curves with handles and presets", section: .extensions),
+        .init(id: "cutout.person", title: "Person Cutout Studio", subtitle: "On-device person segmentation and transparent video export", section: .extensions),
+        .init(id: "dead.frames", title: "Dead Frame Cleaner", subtitle: "Detect and remove duplicate frames while keeping audio aligned", section: .extensions),
         .init(id: "camera.shake", title: "Camera Shake Generator", subtitle: "Generate deterministic shake samples", section: .extensions),
         .init(id: "random.values", title: "Random Value Generator", subtitle: "Seeded repeatable random values", section: .scripts),
         .init(id: "expression.helper", title: "Expression Helper", subtitle: "Copy reusable motion formulas", section: .scripts),
@@ -12,6 +14,6 @@ public enum ToolRegistry {
         .init(id: "bpm.frames", title: "BPM / Beat / Frame Calculator", subtitle: "Convert beats, seconds and frames", section: .utilities),
         .init(id: "color.palette", title: "Color Palette Generator", subtitle: "Build harmonic color palettes", section: .utilities),
         .init(id: "layer.offset", title: "Layer Offset Planner", subtitle: "Plan sequential timing offsets", section: .utilities),
-        .init(id: "host.diagnostics", title: "Native Host Diagnostics", subtitle: "Inspect the speed/timeline bridge for direct apply", section: .utilities),
+        .init(id: "host.diagnostics", title: "Native Host Diagnostics 2", subtitle: "Inspect Alight Motion speed, keyframe and timeline bridges", section: .utilities),
     ]
 }

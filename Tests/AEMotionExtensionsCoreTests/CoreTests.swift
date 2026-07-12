@@ -25,9 +25,11 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(a.map(\.x), b.map(\.x)); XCTAssertEqual(a.map(\.y), b.map(\.y))
     }
     func testToolRegistryContainsFunctionalTools() {
-        XCTAssertEqual(ToolRegistry.all.count, 11)
+        XCTAssertEqual(ToolRegistry.all.count, 13)
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "speed.remap" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "host.diagnostics" })
+        XCTAssertTrue(ToolRegistry.all.contains { $0.id == "cutout.person" })
+        XCTAssertTrue(ToolRegistry.all.contains { $0.id == "dead.frames" })
     }
     func testConstantSpeedCurve() throws {
         let curve = try SpeedCurve.constant(duration: 3, velocity: 2)

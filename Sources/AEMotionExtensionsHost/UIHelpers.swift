@@ -8,7 +8,7 @@ enum ExtensionUI {
         field.placeholder = placeholder
         field.text = value
         field.borderStyle = .roundedRect
-        field.keyboardType = .decimalPad
+        field.keyboardType = .numbersAndPunctuation
         field.clearButtonMode = .whileEditing
         return field
     }
@@ -30,11 +30,40 @@ enum ExtensionUI {
         return button
     }
 
+    static func secondaryButton(_ title: String, action: UIAction) -> UIButton {
+        let button = UIButton(type: .system, primaryAction: action)
+        var configuration = UIButton.Configuration.tinted()
+        configuration.title = title
+        configuration.cornerStyle = .medium
+        button.configuration = configuration
+        return button
+    }
+
     static func stack(_ views: [UIView], spacing: CGFloat = 12) -> UIStackView {
         let stack = UIStackView(arrangedSubviews: views)
         stack.axis = .vertical
         stack.spacing = spacing
         stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }
+
+    static func horizontalStack(_ views: [UIView], spacing: CGFloat = 8) -> UIStackView {
+        let stack = UIStackView(arrangedSubviews: views)
+        stack.axis = .horizontal
+        stack.alignment = .fill
+        stack.distribution = .fillEqually
+        stack.spacing = spacing
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }
+
+    static func labeledSwitch(_ title: String, control: UISwitch) -> UIView {
+        let label = self.label(title)
+        control.setContentHuggingPriority(.required, for: .horizontal)
+        let stack = UIStackView(arrangedSubviews: [label, control])
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 12
         return stack
     }
 
@@ -128,12 +157,6 @@ final class CurveGraphView: UIView {
         context.move(to: map(points[0]))
         for point in points.dropFirst() { context.addLine(to: map(point)) }
         context.strokePath()
-
-        context.setFillColor(UIColor.systemBlue.cgColor)
-        for point in points where point.x == minX || point.x == maxX {
-            let p = map(point)
-            context.fillEllipse(in: CGRect(x: p.x - 3, y: p.y - 3, width: 6, height: 6))
-        }
     }
 }
 #endif

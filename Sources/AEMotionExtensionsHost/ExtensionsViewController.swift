@@ -85,6 +85,8 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
         switch item.id {
         case "speed.remap": return SpeedRemapStudioViewController()
         case "easing.curve": return EasingCurveViewController()
+        case "cutout.person": return PersonCutoutStudioViewController()
+        case "dead.frames": return DeadFrameCleanerViewController()
         case "camera.shake": return CameraShakeViewController()
         case "random.values": return RandomValuesViewController()
         case "expression.helper": return ExpressionHelperViewController()
@@ -101,6 +103,8 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
         switch id {
         case "speed.remap": return "speedometer"
         case "easing.curve": return "chart.xyaxis.line"
+        case "cutout.person": return "person.crop.rectangle"
+        case "dead.frames": return "film.stack"
         case "camera.shake": return "waveform.path"
         case "random.values": return "dice"
         case "expression.helper": return "function"

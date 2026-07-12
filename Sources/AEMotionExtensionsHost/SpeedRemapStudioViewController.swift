@@ -1,18 +1,26 @@
-#if canImport(UIKit) && canImport(AVFoundation) && canImport(UniformTypeIdentifiers)
+#if canImport(UIKit) && canImport(AVFoundation) && canImport(UniformTypeIdentifiers) && canImport(PhotosUI)
 import UIKit
 import AVFoundation
 import UniformTypeIdentifiers
+import PhotosUI
 import AEMotionExtensionsCore
 
-final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, UIDocumentPickerDelegate {
+@MainActor
+final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+    private let preview = VideoPreviewPanel()
     private let sourceLabel = ExtensionUI.label("No source video selected.")
     private let fpsField = ExtensionUI.field("Output FPS", value: "30")
-    private let graph = CurveGraphView()
+    private let curveEditor = InteractiveCurveEditorView()
     private let table = UITableView(frame: .zero, style: .insetGrouped)
     private let progress = UIProgressView(progressViewStyle: .default)
     private let status = ExtensionUI.label("1× normal · 0 freeze · negative reverse")
+    private let includeAudioSwitch = UISwitch()
+    private let preservePitchSwitch = UISwitch()
+
+    private var picker: MediaSourcePicker?
     private var sourceURL: URL?
     private var sourceDuration: Double = 3
+    private var isSyncingEditor = false
     private var keyframes: [SpeedKeyframe] = [
         .init(outputTime: 0, velocity: 1, incomingSlope: 0, outgoingSlope: 0),
         .init(outputTime: 3, velocity: 1, incomingSlope: 0, outgoingSlope: 0),
@@ -23,47 +31,116 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
         title = "Speed Remap Studio"
         view.backgroundColor = .systemBackground
 
-        graph.heightAnchor.constraint(equalToConstant: 220).isActive = true
-        graph.horizontalZero = 0
+        includeAudioSwitch.isOn = true
+        preservePitchSwitch.isOn = true
+
+        curveEditor.heightAnchor.constraint(equalToConstant: 300).isActive = true
+        curveEditor.minimumPointCount = 2
+        curveEditor.horizontalZero = 0
+        curveEditor.lockFirstX = true
+        curveEditor.lockLastX = true
+        curveEditor.onChange = { [weak self] points in self?.editorChanged(points) }
+        curveEditor.onSelectionChange = { [weak self] point in
+            guard let self else { return }
+            if let point {
+                self.status.text = "Selected: \(String(format: "%.3f", point.x)) s · \(String(format: "%.3f", point.y))×"
+            }
+        }
+
         table.dataSource = self
         table.delegate = self
         table.register(UITableViewCell.self, forCellReuseIdentifier: "keyframe")
-        table.heightAnchor.constraint(equalToConstant: 260).isActive = true
+        table.heightAnchor.constraint(equalToConstant: 240).isActive = true
         progress.progress = 0
 
-        let choose = ExtensionUI.button("Choose Video", action: UIAction { [weak self] _ in self?.chooseVideo() })
-        let add = ExtensionUI.button("Add Speed Keyframe", action: UIAction { [weak self] _ in self?.editKeyframe(nil) })
-        let presets = UISegmentedControl(items: ["Normal", "Ramp", "Impact", "Freeze", "Reverse"])
-        presets.selectedSegmentIndex = 0
-        presets.addAction(UIAction { [weak self] action in
-            guard let control = action.sender as? UISegmentedControl else { return }
-            self?.applyPreset(control.selectedSegmentIndex)
-        }, for: .valueChanged)
-        let export = ExtensionUI.button("Export Retimed Video", action: UIAction { [weak self] action in
-            self?.exportVideo(sourceView: nil)
+        let photos = ExtensionUI.button("Choose from Photos", action: UIAction { [weak self] _ in self?.chooseVideo(photos: true) })
+        let files = ExtensionUI.secondaryButton("Choose from Files", action: UIAction { [weak self] _ in self?.chooseVideo(photos: false) })
+        let pickerRow = ExtensionUI.horizontalStack([photos, files])
+
+        let add = ExtensionUI.secondaryButton("Add Keyframe", action: UIAction { [weak self] _ in
+            guard let self else { return }
+            let time = self.preview.duration > 0 ? self.preview.currentTime : self.sourceDuration * 0.5
+            self.addKeyframe(at: time)
         })
-        let shareCurve = ExtensionUI.button("Share Speed Curve JSON", action: UIAction { [weak self] action in
-            self?.shareCurve(sourceView: nil)
+        let delete = ExtensionUI.secondaryButton("Delete Selected", action: UIAction { [weak self] _ in
+            self?.curveEditor.deleteSelectedPoint()
+        })
+        let editRow = ExtensionUI.horizontalStack([add, delete])
+
+        let export = ExtensionUI.button("Export Retimed Video", action: UIAction { [weak self] action in
+            self?.exportVideo(sourceView: action.sender as? UIView)
+        })
+        let shareCurve = ExtensionUI.secondaryButton("Share Speed Curve JSON", action: UIAction { [weak self] action in
+            self?.shareCurve(sourceView: action.sender as? UIView)
         })
 
         ExtensionUI.installScrollStack(ExtensionUI.stack([
-            ExtensionUI.label("Velocity graph with keyframed speed, reverse and freeze. The current build exports a new video for re-import; it does not yet write directly into Alight Motion's private project model."),
-            choose, sourceLabel, presets, graph, fpsField, add, table, status, progress, export, shareCurve
+            ExtensionUI.label("Watch the source while editing. Drag blue points and orange tangent handles. Double-tap the graph to add a point."),
+            preview,
+            pickerRow,
+            sourceLabel,
+            ExtensionUI.label("Flow-style presets", style: .headline),
+            makePresetScroller(),
+            curveEditor,
+            editRow,
+            fpsField,
+            ExtensionUI.labeledSwitch("Include retimed audio", control: includeAudioSwitch),
+            ExtensionUI.labeledSwitch("Preserve audio pitch", control: preservePitchSwitch),
+            table,
+            status,
+            progress,
+            export,
+            shareCurve,
+            ExtensionUI.label("Forward audio segments use spectral pitch preservation. Freeze and reverse sections are silent in this build.", style: .footnote),
         ]), in: self)
         refresh()
     }
 
-    private func chooseVideo() {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.movie], asCopy: true)
-        picker.delegate = self
-        present(picker, animated: true)
+    private func makePresetScroller() -> UIView {
+        let scroll = UIScrollView()
+        scroll.showsHorizontalScrollIndicator = false
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        let presets = ["Normal", "Smooth Ramp", "Impact", "Freeze Hit", "Reverse", "Velocity Punch"]
+        for name in presets {
+            let button = ExtensionUI.secondaryButton(name, action: UIAction { [weak self] _ in self?.applyPreset(name) })
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 105).isActive = true
+            stack.addArrangedSubview(button)
+        }
+        scroll.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
+            stack.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor),
+            scroll.heightAnchor.constraint(equalToConstant: 44),
+        ])
+        return scroll
     }
 
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        guard let url = urls.first else { return }
+    private func chooseVideo(photos: Bool) {
+        let picker = MediaSourcePicker(presenter: self) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let url): self.loadSource(url)
+            case .failure(let error):
+                ExtensionUI.alert(title: "Import failed", message: error.localizedDescription, from: self)
+            }
+        }
+        self.picker = picker
+        photos ? picker.presentPhotos() : picker.presentFiles()
+    }
+
+    private func loadSource(_ url: URL) {
         sourceURL = url
+        preview.load(url: url)
         let asset = AVURLAsset(url: url)
-        sourceDuration = max(0.1, asset.duration.seconds)
+        let duration = asset.duration.seconds
+        sourceDuration = duration.isFinite ? max(0.1, duration) : 3
         keyframes = [
             .init(outputTime: 0, velocity: 1, incomingSlope: 0, outgoingSlope: 0),
             .init(outputTime: sourceDuration, velocity: 1, incomingSlope: 0, outgoingSlope: 0),
@@ -72,16 +149,24 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
         refresh()
     }
 
-    private func applyPreset(_ index: Int) {
+    private func applyPreset(_ name: String) {
         let duration = max(0.5, sourceDuration)
-        switch index {
-        case 1: keyframes = SpeedRemapPreset.smoothRamp(duration: duration)
-        case 2: keyframes = SpeedRemapPreset.impact(duration: duration)
-        case 3: keyframes = SpeedRemapPreset.freezeHit(duration: duration)
-        case 4:
+        switch name {
+        case "Smooth Ramp": keyframes = SpeedRemapPreset.smoothRamp(duration: duration)
+        case "Impact": keyframes = SpeedRemapPreset.impact(duration: duration)
+        case "Freeze Hit": keyframes = SpeedRemapPreset.freezeHit(duration: duration)
+        case "Reverse":
             keyframes = [
                 .init(outputTime: 0, velocity: -1, incomingSlope: 0, outgoingSlope: 0),
                 .init(outputTime: duration, velocity: -1, incomingSlope: 0, outgoingSlope: 0),
+            ]
+        case "Velocity Punch":
+            keyframes = [
+                .init(outputTime: 0, velocity: 1, outgoingSlope: -5),
+                .init(outputTime: duration * 0.22, velocity: 0.15, incomingSlope: 0, outgoingSlope: 12),
+                .init(outputTime: duration * 0.38, velocity: 4.5, incomingSlope: 0, outgoingSlope: -7),
+                .init(outputTime: duration * 0.62, velocity: 0.65, incomingSlope: 0, outgoingSlope: 1.2),
+                .init(outputTime: duration, velocity: 1, incomingSlope: 0),
             ]
         default:
             keyframes = [
@@ -92,40 +177,86 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
         refresh()
     }
 
+    private func addKeyframe(at time: Double) {
+        let clamped = min(max(0.001, time), max(0.002, sourceDuration - 0.001))
+        if keyframes.contains(where: { abs($0.outputTime - clamped) < 0.0005 }) { return }
+        let velocity = (try? curve().velocity(at: clamped)) ?? 1
+        keyframes.append(.init(outputTime: clamped, velocity: velocity, incomingSlope: 0, outgoingSlope: 0))
+        refresh()
+    }
+
     private func curve() throws -> SpeedCurve {
         let reverseOnly = keyframes.allSatisfy { $0.velocity < 0 }
         return try SpeedCurve(sourceOrigin: reverseOnly ? sourceDuration : 0, keyframes: keyframes)
     }
 
+    private func editorChanged(_ points: [EditableCurvePoint]) {
+        guard !isSyncingEditor else { return }
+        keyframes = points.map {
+            SpeedKeyframe(
+                id: $0.id,
+                outputTime: $0.x,
+                velocity: $0.y,
+                incomingSlope: $0.incomingSlope,
+                outgoingSlope: $0.outgoingSlope
+            )
+        }.sorted { $0.outputTime < $1.outputTime }
+        table.reloadData()
+        updateStatus()
+    }
+
     private func refresh() {
         keyframes.sort { $0.outputTime < $1.outputTime }
         table.reloadData()
+        let velocities = keyframes.map(\.velocity)
+        let minVelocity = min(-1, (velocities.min() ?? 0) - 0.5)
+        let maxVelocity = max(2, (velocities.max() ?? 1) + 0.5)
+        curveEditor.xDomain = 0...max(0.1, keyframes.last?.outputTime ?? sourceDuration)
+        curveEditor.yDomain = minVelocity...maxVelocity
+        curveEditor.horizontalZero = 0
+        isSyncingEditor = true
+        curveEditor.setPoints(keyframes.map {
+            EditableCurvePoint(
+                id: $0.id,
+                x: $0.outputTime,
+                y: $0.velocity,
+                incomingSlope: $0.incomingSlope,
+                outgoingSlope: $0.outgoingSlope
+            )
+        })
+        isSyncingEditor = false
+        updateStatus()
+    }
+
+    private func updateStatus() {
         do {
             let curve = try curve()
-            let duration = max(0.001, curve.outputDuration)
-            graph.points = (0...160).map { index in
-                let time = duration * Double(index) / 160
-                return (time, curve.velocity(at: time))
+            let samples = (0...180).map { index -> Double in
+                let time = curve.outputDuration * Double(index) / 180
+                return curve.velocity(at: time)
             }
-            let minVelocity = graph.points.map(\.y).min() ?? 0
-            let maxVelocity = graph.points.map(\.y).max() ?? 0
-            status.text = "Output: \(String(format: "%.3f", duration)) s · Velocity range: \(String(format: "%.2f", minVelocity))× to \(String(format: "%.2f", maxVelocity))×"
+            let minimum = samples.min() ?? 0
+            let maximum = samples.max() ?? 0
+            status.text = "Output: \(String(format: "%.3f", curve.outputDuration)) s · Velocity: \(String(format: "%.2f", minimum))× to \(String(format: "%.2f", maximum))×"
         } catch {
-            graph.points = []
             status.text = "Invalid curve: \(error.localizedDescription)"
         }
     }
 
-    private func editKeyframe(_ existingIndex: Int?) {
-        let existing = existingIndex.map { keyframes[$0] }
-        let alert = UIAlertController(title: existing == nil ? "Add keyframe" : "Edit keyframe", message: "Velocity: 1 normal, 0 freeze, negative reverse. Slopes control the graph handles.", preferredStyle: .alert)
+    private func editKeyframe(_ index: Int) {
+        let existing = keyframes[index]
+        let alert = UIAlertController(
+            title: "Edit speed keyframe",
+            message: "Velocity: 1 normal, 0 freeze, negative reverse. Tangent slopes can also be changed directly on the graph.",
+            preferredStyle: .alert
+        )
         let values = [
-            existing.map { String(format: "%.3f", $0.outputTime) } ?? String(format: "%.3f", max(0, sourceDuration * 0.5)),
-            existing.map { String(format: "%.3f", $0.velocity) } ?? "1",
-            existing?.incomingSlope.map { String(format: "%.3f", $0) } ?? "",
-            existing?.outgoingSlope.map { String(format: "%.3f", $0) } ?? "",
+            String(format: "%.3f", existing.outputTime),
+            String(format: "%.3f", existing.velocity),
+            existing.incomingSlope.map { String(format: "%.3f", $0) } ?? "",
+            existing.outgoingSlope.map { String(format: "%.3f", $0) } ?? "",
         ]
-        let placeholders = ["Output time (seconds)", "Velocity", "Incoming slope (optional)", "Outgoing slope (optional)"]
+        let placeholders = ["Output time", "Velocity", "Incoming slope", "Outgoing slope"]
         for index in placeholders.indices {
             alert.addTextField { field in
                 field.placeholder = placeholders[index]
@@ -138,16 +269,13 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
             guard let self, let fields = alert?.textFields, fields.count == 4,
                   let time = Double(fields[0].text ?? ""),
                   let velocity = Double(fields[1].text ?? "") else { return }
-            let incoming = Double(fields[2].text ?? "")
-            let outgoing = Double(fields[3].text ?? "")
-            let point = SpeedKeyframe(
-                id: existing?.id ?? UUID(),
+            self.keyframes[index] = .init(
+                id: existing.id,
                 outputTime: max(0, time),
                 velocity: velocity,
-                incomingSlope: incoming,
-                outgoingSlope: outgoing
+                incomingSlope: Double(fields[2].text ?? ""),
+                outgoingSlope: Double(fields[3].text ?? "")
             )
-            if let existingIndex { self.keyframes[existingIndex] = point } else { self.keyframes.append(point) }
             self.refresh()
         })
         present(alert, animated: true)
@@ -166,24 +294,29 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
         }
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("AE-Motion-Speed-\(UUID().uuidString).mov")
-        let exporter = VideoTimeRemapExporter()
+        let options = VideoTimeRemapExportOptions(
+            outputDuration: curve.outputDuration,
+            frameRate: fps,
+            includeAudio: includeAudioSwitch.isOn,
+            preservePitch: preservePitchSwitch.isOn
+        )
         progress.progress = 0
-        status.text = "Exporting video only…"
+        status.text = "Exporting retimed video…"
 
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 try await Task.detached(priority: .userInitiated) {
-                    try exporter.export(
+                    try VideoTimeRemapExporter().export(
                         inputURL: sourceURL,
                         outputURL: outputURL,
                         curve: curve,
-                        options: VideoTimeRemapExportOptions(outputDuration: curve.outputDuration, frameRate: fps)
+                        options: options
                     ) { value in
                         Task { @MainActor [weak self] in self?.progress.progress = Float(value) }
                     }
                 }.value
-                self.status.text = "Export complete. Audio is not included in this build."
+                self.status.text = "Export complete."
                 ExtensionUI.share(fileURL: outputURL, from: self, source: sourceView)
             } catch {
                 self.status.text = "Export failed."
@@ -197,14 +330,14 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
             let data = try encoder.encode(keyframes)
-            let text = String(decoding: data, as: UTF8.self)
-            ExtensionUI.share(text: text, from: self, source: sourceView)
+            ExtensionUI.share(text: String(decoding: data, as: UTF8.self), from: self, source: sourceView)
         } catch {
             ExtensionUI.alert(title: "Could not encode curve", message: error.localizedDescription, from: self)
         }
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { keyframes.count }
+
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let point = keyframes[indexPath.row]
         let cell = tableView.dequeueReusableCell(withIdentifier: "keyframe", for: indexPath)
@@ -212,16 +345,19 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
         config.text = "\(String(format: "%.3f", point.outputTime)) s  ·  \(String(format: "%.3f", point.velocity))×"
         let inSlope = point.incomingSlope.map { String(format: "%.2f", $0) } ?? "auto"
         let outSlope = point.outgoingSlope.map { String(format: "%.2f", $0) } ?? "auto"
-        config.secondaryText = "In slope: \(inSlope) · Out slope: \(outSlope)"
+        config.secondaryText = "In: \(inSlope) · Out: \(outSlope)"
         cell.contentConfiguration = config
         cell.accessoryType = .disclosureIndicator
         return cell
     }
+
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         editKeyframe(indexPath.row)
     }
+
     func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool { keyframes.count > 2 }
+
     func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
         guard editingStyle == .delete, keyframes.count > 2 else { return }
         keyframes.remove(at: indexPath.row)

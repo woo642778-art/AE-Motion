@@ -35,57 +35,134 @@ final class BPMCalculatorViewController: UIViewController {
 
 final class EasingCurveViewController: UIViewController {
     private let duration = ExtensionUI.field("Duration frames", value: "30")
-    private let samples = ExtensionUI.field("Samples", value: "16")
-    private let preset = UISegmentedControl(items: ["Linear", "Ease", "Back"])
-    private let graph = CurveGraphView()
+    private let samples = ExtensionUI.field("Samples", value: "32")
+    private let editor = InteractiveCurveEditorView()
     private let output = UITextView()
     private var csv = ""
+    private var isSyncing = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Easing Curve Generator"
         view.backgroundColor = .systemBackground
-        preset.selectedSegmentIndex = 1
-        graph.heightAnchor.constraint(equalToConstant: 220).isActive = true
+
+        editor.heightAnchor.constraint(equalToConstant: 300).isActive = true
+        editor.xDomain = 0...1
+        editor.yDomain = -0.35...1.35
+        editor.lockFirstX = true
+        editor.lockLastX = true
+        editor.lockFirstY = true
+        editor.lockLastY = true
+        editor.minimumPointCount = 2
+        editor.onChange = { [weak self] _ in self?.generate() }
+
         output.isEditable = false
-        output.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        output.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         output.heightAnchor.constraint(equalToConstant: 180).isActive = true
-        let generateButton = ExtensionUI.button("Generate", action: UIAction { [weak self] _ in self?.generate() })
-        let copy = ExtensionUI.button("Share CSV", action: UIAction { [weak self] action in
+
+        let reset = ExtensionUI.secondaryButton("Reset", action: UIAction { [weak self] _ in self?.applyPreset("Ease In-Out") })
+        let delete = ExtensionUI.secondaryButton("Delete Selected", action: UIAction { [weak self] _ in self?.editor.deleteSelectedPoint() })
+        let controls = ExtensionUI.horizontalStack([reset, delete])
+        let share = ExtensionUI.button("Share CSV", action: UIAction { [weak self] action in
             guard let self else { return }
-            ExtensionUI.share(text: self.csv, from: self, source: nil)
+            ExtensionUI.share(text: self.csv, from: self, source: action.sender as? UIView)
         })
+
         ExtensionUI.installScrollStack(ExtensionUI.stack([
-            ExtensionUI.label("Generate sampled keyframe values for smooth motion."), preset, duration, samples, graph, generateButton, copy, output
+            ExtensionUI.label("Flow-style easing editor. Drag points and orange tangent handles. Double-tap the graph to add a point."),
+            makePresetScroller(),
+            editor,
+            controls,
+            duration,
+            samples,
+            share,
+            output,
         ]), in: self)
+        applyPreset("Ease In-Out")
+    }
+
+    private func makePresetScroller() -> UIView {
+        let scroll = UIScrollView()
+        scroll.showsHorizontalScrollIndicator = false
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        for name in ["Linear", "Ease In", "Ease Out", "Ease In-Out", "Back", "Elastic"] {
+            let button = ExtensionUI.secondaryButton(name, action: UIAction { [weak self] _ in self?.applyPreset(name) })
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 92).isActive = true
+            stack.addArrangedSubview(button)
+        }
+        scroll.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
+            stack.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor),
+            scroll.heightAnchor.constraint(equalToConstant: 44),
+        ])
+        return scroll
+    }
+
+    private func applyPreset(_ name: String) {
+        let points: [EditableCurvePoint]
+        switch name {
+        case "Linear":
+            points = [
+                .init(x: 0, y: 0, incomingSlope: 1, outgoingSlope: 1),
+                .init(x: 1, y: 1, incomingSlope: 1, outgoingSlope: 1),
+            ]
+        case "Ease In":
+            points = [
+                .init(x: 0, y: 0, incomingSlope: 0, outgoingSlope: 0),
+                .init(x: 1, y: 1, incomingSlope: 2.2, outgoingSlope: 2.2),
+            ]
+        case "Ease Out":
+            points = [
+                .init(x: 0, y: 0, incomingSlope: 2.2, outgoingSlope: 2.2),
+                .init(x: 1, y: 1, incomingSlope: 0, outgoingSlope: 0),
+            ]
+        case "Back":
+            points = [
+                .init(x: 0, y: 0, incomingSlope: -0.8, outgoingSlope: -0.8),
+                .init(x: 0.72, y: 1.16, incomingSlope: 0.4, outgoingSlope: 0.4),
+                .init(x: 1, y: 1, incomingSlope: 0, outgoingSlope: 0),
+            ]
+        case "Elastic":
+            points = [
+                .init(x: 0, y: 0, incomingSlope: 0, outgoingSlope: 0),
+                .init(x: 0.58, y: 1.18, incomingSlope: 0, outgoingSlope: -3),
+                .init(x: 0.78, y: 0.92, incomingSlope: 0, outgoingSlope: 1.4),
+                .init(x: 1, y: 1, incomingSlope: 0, outgoingSlope: 0),
+            ]
+        default:
+            points = [
+                .init(x: 0, y: 0, incomingSlope: 0, outgoingSlope: 0),
+                .init(x: 1, y: 1, incomingSlope: 0, outgoingSlope: 0),
+            ]
+        }
+        isSyncing = true
+        editor.setPoints(points)
+        isSyncing = false
         generate()
     }
 
     private func generate() {
-        let count = max(2, Int(samples.text ?? "") ?? 16)
+        guard !isSyncing else { return }
+        let count = max(2, min(500, Int(samples.text ?? "") ?? 32))
         let frames = max(1, Int(duration.text ?? "") ?? 30)
-        var points: [KeyframePoint] = []
-        for index in 0..<count {
-            let t = Double(index) / Double(count - 1)
-            let value: Double
-            switch preset.selectedSegmentIndex {
-            case 0: value = t
-            case 2:
-                let c1 = 1.70158
-                let c3 = c1 + 1
-                let x = t - 1
-                value = 1 + c3 * x * x * x + c1 * x * x
-            default:
-                value = t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2
-            }
-            points.append(KeyframePoint(frame: Int((t * Double(frames)).rounded()), value: value))
+        let sampled = editor.sampledPoints(count: count)
+        let points = sampled.enumerated().map { index, sample in
+            KeyframePoint(frame: Int((sample.x * Double(frames)).rounded()), value: sample.y)
         }
-        graph.points = points.map { (Double($0.frame), $0.value) }
-        csv = "frame,value\n" + points.map { "\($0.frame),\(String(format: "%.6f", $0.value))" }.joined(separator: "\n")
+        csv = "frame,value\n" + points.map {
+            "\($0.frame),\(String(format: "%.6f", $0.value))"
+        }.joined(separator: "\n")
         output.text = csv
     }
 }
-
 final class RandomValuesViewController: UIViewController {
     private let count = ExtensionUI.field("Count", value: "12")
     private let minimum = ExtensionUI.field("Minimum", value: "-10")

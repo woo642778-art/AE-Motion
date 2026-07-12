@@ -9,6 +9,9 @@ struct VideoTimeRemapExportOptions: Sendable {
     var outputDuration: Double
     var frameRate: Double
     var videoCodec: AVVideoCodecType = .h264
+    var includeAudio: Bool = true
+    var preservePitch: Bool = true
+    var audioSegmentRate: Double = 24
 }
 
 enum VideoTimeRemapExportError: Error, LocalizedError, Sendable {
@@ -19,6 +22,8 @@ enum VideoTimeRemapExportError: Error, LocalizedError, Sendable {
     case frameGenerationFailed(Double)
     case appendFailed(Double)
     case writerFailed(String)
+    case compositionFailed(String)
+    case exportFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -29,16 +34,58 @@ enum VideoTimeRemapExportError: Error, LocalizedError, Sendable {
         case .frameGenerationFailed(let time): return "Could not decode the source near \(time) seconds."
         case .appendFailed(let time): return "Could not append the frame at \(time) seconds."
         case .writerFailed(let reason): return reason
+        case .compositionFailed(let reason): return reason
+        case .exportFailed(let reason): return reason
         }
     }
 }
 
-/// Video-only exporter. Audio is intentionally omitted until a pitch-preserving
-/// variable-rate audio graph is added.
+/// Renders a variable-speed video frame-by-frame, then optionally rebuilds the
+/// positive-speed audio path from short scaled segments. The export session's
+/// spectral time-pitch algorithm preserves pitch for supported forward segments.
+/// Freeze and reverse segments are intentionally silent because AVFoundation's
+/// composition time-scaling does not reverse PCM samples.
 final class VideoTimeRemapExporter: @unchecked Sendable {
     private let context = CIContext(options: [.cacheIntermediates: false])
 
     func export(
+        inputURL: URL,
+        outputURL: URL,
+        curve: SpeedCurve,
+        options: VideoTimeRemapExportOptions,
+        progress: @escaping @Sendable (Double) -> Void
+    ) throws {
+        let temporaryVideo = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AE-Motion-Retimed-Video-\(UUID().uuidString).mov")
+        defer { try? FileManager.default.removeItem(at: temporaryVideo) }
+
+        try renderVideoOnly(
+            inputURL: inputURL,
+            outputURL: temporaryVideo,
+            curve: curve,
+            options: options
+        ) { value in
+            progress(value * (options.includeAudio ? 0.82 : 1.0))
+        }
+
+        guard options.includeAudio else {
+            try? FileManager.default.removeItem(at: outputURL)
+            try FileManager.default.moveItem(at: temporaryVideo, to: outputURL)
+            progress(1)
+            return
+        }
+
+        try muxVariableRateAudio(
+            sourceURL: inputURL,
+            renderedVideoURL: temporaryVideo,
+            outputURL: outputURL,
+            curve: curve,
+            options: options
+        )
+        progress(1)
+    }
+
+    private func renderVideoOnly(
         inputURL: URL,
         outputURL: URL,
         curve: SpeedCurve,
@@ -95,8 +142,8 @@ final class VideoTimeRemapExporter: @unchecked Sendable {
 
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
-        generator.requestedTimeToleranceBefore = .zero
-        generator.requestedTimeToleranceAfter = .zero
+        generator.requestedTimeToleranceBefore = CMTime(seconds: 1.0 / max(1, options.frameRate), preferredTimescale: 600)
+        generator.requestedTimeToleranceAfter = generator.requestedTimeToleranceBefore
 
         for (index, sample) in samples.enumerated() {
             while !input.isReadyForMoreMediaData {
@@ -139,6 +186,102 @@ final class VideoTimeRemapExporter: @unchecked Sendable {
         guard writer.status == .completed else {
             throw VideoTimeRemapExportError.writerFailed(
                 writer.error?.localizedDescription ?? "finishWriting failed"
+            )
+        }
+    }
+
+    private func muxVariableRateAudio(
+        sourceURL: URL,
+        renderedVideoURL: URL,
+        outputURL: URL,
+        curve: SpeedCurve,
+        options: VideoTimeRemapExportOptions
+    ) throws {
+        let sourceAsset = AVURLAsset(url: sourceURL)
+        guard let sourceAudio = sourceAsset.tracks(withMediaType: .audio).first else {
+            try? FileManager.default.removeItem(at: outputURL)
+            try FileManager.default.copyItem(at: renderedVideoURL, to: outputURL)
+            return
+        }
+        let renderedAsset = AVURLAsset(url: renderedVideoURL)
+        guard let renderedVideo = renderedAsset.tracks(withMediaType: .video).first else {
+            throw VideoTimeRemapExportError.noVideoTrack
+        }
+
+        let composition = AVMutableComposition()
+        guard let videoTrack = composition.addMutableTrack(
+            withMediaType: .video,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ), let audioTrack = composition.addMutableTrack(
+            withMediaType: .audio,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ) else {
+            throw VideoTimeRemapExportError.compositionFailed("Could not create composition tracks.")
+        }
+
+        let outputRange = CMTimeRange(
+            start: .zero,
+            duration: CMTime(seconds: options.outputDuration, preferredTimescale: 600)
+        )
+        do {
+            try videoTrack.insertTimeRange(outputRange, of: renderedVideo, at: .zero)
+            videoTrack.preferredTransform = renderedVideo.preferredTransform
+        } catch {
+            throw VideoTimeRemapExportError.compositionFailed("Could not insert rendered video: \(error.localizedDescription)")
+        }
+
+        let sourceDuration = max(0, sourceAsset.duration.seconds)
+        let sampleRate = max(4, min(120, options.audioSegmentRate))
+        let segmentCount = max(1, Int(ceil(options.outputDuration * sampleRate)))
+        var destinationCursor = CMTime.zero
+
+        for index in 0..<segmentCount {
+            let outputStart = options.outputDuration * Double(index) / Double(segmentCount)
+            let outputEnd = options.outputDuration * Double(index + 1) / Double(segmentCount)
+            let outputSegmentDuration = outputEnd - outputStart
+            guard outputSegmentDuration > 0 else { continue }
+
+            let sourceStart = curve.sourceTime(at: outputStart)
+            let sourceEnd = curve.sourceTime(at: outputEnd)
+            let sourceDelta = sourceEnd - sourceStart
+            let destinationDuration = CMTime(seconds: outputSegmentDuration, preferredTimescale: 600)
+
+            if sourceDelta > 0.0001 {
+                let clampedStart = min(max(sourceStart, 0), sourceDuration)
+                let clampedEnd = min(max(sourceEnd, 0), sourceDuration)
+                let duration = max(0, clampedEnd - clampedStart)
+                if duration > 0.0001 {
+                    let sourceRange = CMTimeRange(
+                        start: CMTime(seconds: clampedStart, preferredTimescale: 600),
+                        duration: CMTime(seconds: duration, preferredTimescale: 600)
+                    )
+                    do {
+                        try audioTrack.insertTimeRange(sourceRange, of: sourceAudio, at: destinationCursor)
+                        let insertedRange = CMTimeRange(start: destinationCursor, duration: sourceRange.duration)
+                        audioTrack.scaleTimeRange(insertedRange, toDuration: destinationDuration)
+                    } catch {
+                        throw VideoTimeRemapExportError.compositionFailed("Could not build retimed audio: \(error.localizedDescription)")
+                    }
+                }
+            }
+            destinationCursor = destinationCursor + destinationDuration
+        }
+
+        try? FileManager.default.removeItem(at: outputURL)
+        guard let session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
+            throw VideoTimeRemapExportError.exportFailed("Could not create the final export session.")
+        }
+        session.outputURL = outputURL
+        session.outputFileType = .mov
+        session.shouldOptimizeForNetworkUse = false
+        session.audioTimePitchAlgorithm = options.preservePitch ? .spectral : .varispeed
+
+        let semaphore = DispatchSemaphore(value: 0)
+        session.exportAsynchronously { semaphore.signal() }
+        semaphore.wait()
+        guard session.status == .completed else {
+            throw VideoTimeRemapExportError.exportFailed(
+                session.error?.localizedDescription ?? "Final audio/video export failed."
             )
         }
     }
