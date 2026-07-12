@@ -311,7 +311,7 @@ final class CategoryCollectionProxy: NSObject, UICollectionViewDataSource, UICol
         return CGSize(width: 120, height: 110)
     }
 
-    private func isUnsafeForwardedItemSelector(_ selector: Selector) -> Bool {
+    nonisolated private func isUnsafeForwardedItemSelector(_ selector: Selector) -> Bool {
         let name = NSStringFromSelector(selector).lowercased()
         // Unknown optional/private callbacks carrying an item index path cannot
         // be forwarded verbatim after inserting a synthetic cell. Returning
