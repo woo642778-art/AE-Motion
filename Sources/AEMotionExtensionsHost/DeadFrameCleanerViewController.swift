@@ -203,7 +203,7 @@ final class DeadFrameCleanerViewController: UIViewController {
         let export = ExtensionUI.secondaryButton("Export Cleaned Video", action: UIAction { [weak self] action in
             self?.render(addToTimeline: false, source: action.sender as? UIView)
         })
-        let addToTimeline = ExtensionUI.button("Render & Open Add Layer", action: UIAction { [weak self] action in
+        let addToTimeline = ExtensionUI.button("Render & Return to Timeline", action: UIAction { [weak self] action in
             self?.render(addToTimeline: true, source: action.sender as? UIView)
         })
         let renderActions = ExtensionUI.horizontalStack([export, addToTimeline])
@@ -211,7 +211,7 @@ final class DeadFrameCleanerViewController: UIViewController {
         ExtensionUI.installScrollStack(ExtensionUI.stack([
             ExtensionUI.label("Automatic duplicate/dead-frame removal for clips that contain repeated frames."),
             preview, photos, files, sourceLabel, fpsField, thresholdField, progress, analyze, renderActions, status,
-            ExtensionUI.label("Render & Open Add Layer avoids the share sheet: it saves the result as the newest Photos video and opens Alight Motion's Add Layer flow.", style: .footnote)
+            ExtensionUI.label("Render & Return to Timeline avoids the share sheet: it saves the result as the newest Photos video and returns safely to the open project timeline.", style: .footnote)
         ]), in: self)
     }
 
@@ -285,14 +285,14 @@ final class DeadFrameCleanerViewController: UIViewController {
                     )
                 }.value
                 if addToTimeline {
-                    self.status.text = "Rendered. Preparing Add Layer handoff…"
+                    self.status.text = "Rendered. Saving and returning to timeline…"
                     TimelineHandoffCoordinator.renderResultReady(fileURL: output, from: self) { [weak self] result in
                         guard let self else { return }
                         switch result {
                         case .success:
-                            self.status.text = "Saved as the newest Photos clip and opening Add Layer."
+                            self.status.text = "Saved as the newest Photos clip and returning to the timeline."
                         case .failure(let error):
-                            self.status.text = "Rendered, but automatic handoff was incomplete."
+                            self.status.text = "Rendered, but the safe timeline return was incomplete."
                             ExtensionUI.alert(title: "Timeline handoff", message: error.localizedDescription, from: self)
                         }
                     }

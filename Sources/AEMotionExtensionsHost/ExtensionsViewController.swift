@@ -86,6 +86,7 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
         case "speed.remap": return SpeedRemapStudioViewController()
         case "easing.curve": return EasingCurveViewController()
         case "cutout.person": return PersonCutoutStudioViewController()
+        case "depth.map": return DepthMapStudioViewController()
         case "dead.frames": return DeadFrameCleanerViewController()
         case "camera.shake": return CameraShakeViewController()
         case "random.values": return RandomValuesViewController()
@@ -104,6 +105,7 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
         case "speed.remap": return "speedometer"
         case "easing.curve": return "chart.xyaxis.line"
         case "cutout.person": return "person.crop.rectangle"
+        case "depth.map": return "square.3.layers.3d.down.right"
         case "dead.frames": return "film.stack"
         case "camera.shake": return "waveform.path"
         case "random.values": return "dice"

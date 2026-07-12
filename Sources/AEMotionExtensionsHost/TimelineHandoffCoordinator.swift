@@ -1,7 +1,6 @@
 #if canImport(UIKit) && canImport(Photos)
 import UIKit
 import Photos
-import ObjectiveC.runtime
 
 private final class WeakControllerBox: @unchecked Sendable {
     weak var value: UIViewController?
@@ -14,7 +13,6 @@ enum TimelineHandoffCoordinator {
         case photoPermissionDenied
         case photoSaveFailed(String)
         case projectEditorNotFound
-        case addLayerActionUnavailable
 
         var errorDescription: String? {
             switch self {
@@ -23,16 +21,15 @@ enum TimelineHandoffCoordinator {
             case .photoSaveFailed(let message):
                 return message
             case .projectEditorNotFound:
-                return "The active Alight Motion project editor could not be found. Return to an open project and try again."
-            case .addLayerActionUnavailable:
-                return "The current Alight Motion build did not expose a safe Add Layer action. The rendered clip was saved as the newest Photos item."
+                return "The rendered clip was saved to Photos, but the active Alight Motion project editor could not be found."
             }
         }
     }
 
-    /// A low-risk handoff that avoids the share sheet: render to a temporary file,
-    /// save it as the newest Photos video, return to the project editor, and open Add Layer.
-    /// It deliberately does not mutate Alight Motion's private project database.
+    /// Stable handoff used by all render tools.
+    /// The rendered file is saved as the newest Photos video and the extension UI is closed
+    /// back toward the active project editor. It intentionally does not invoke private
+    /// addLayer selectors because those calls caused a completion-time crash on device.
     static func renderResultReady(
         fileURL: URL,
         from controller: UIViewController,
@@ -49,7 +46,7 @@ enum TimelineHandoffCoordinator {
                 }) { success, error in
                     Task { @MainActor in
                         guard success else {
-                            completion(.failure(HandoffError.photoSaveFailed(
+                            completion(.failure(.photoSaveFailed(
                                 error?.localizedDescription ?? "Could not save the rendered clip to Photos."
                             )))
                             return
@@ -58,13 +55,14 @@ enum TimelineHandoffCoordinator {
                             completion(.failure(.projectEditorNotFound))
                             return
                         }
-                        do {
-                            try openAddLayerFlow(from: controller)
-                            completion(.success(()))
-                        } catch let error as HandoffError {
-                            completion(.failure(error))
-                        } catch {
-                            completion(.failure(.photoSaveFailed(error.localizedDescription)))
+                        guard let projectEditor = findProjectEditor() else {
+                            completion(.failure(.projectEditorNotFound))
+                            return
+                        }
+
+                        completion(.success(()))
+                        DispatchQueue.main.async {
+                            closeToolUI(from: controller, toward: projectEditor)
                         }
                     }
                 }
@@ -81,7 +79,7 @@ enum TimelineHandoffCoordinator {
             return
         }
         if current == .denied || current == .restricted {
-            completion(.failure(HandoffError.photoPermissionDenied))
+            completion(.failure(.photoPermissionDenied))
             return
         }
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
@@ -89,33 +87,16 @@ enum TimelineHandoffCoordinator {
                 if status == .authorized || status == .limited {
                     completion(.success(()))
                 } else {
-                    completion(.failure(HandoffError.photoPermissionDenied))
+                    completion(.failure(.photoPermissionDenied))
                 }
             }
         }
     }
 
-    private static func openAddLayerFlow(from controller: UIViewController) throws {
-        guard let projectEditor = findProjectEditor() else {
-            throw HandoffError.projectEditorNotFound
-        }
-
-        closeToolUI(from: controller, toward: projectEditor)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-            do {
-                try invokeAddLayer(on: projectEditor)
-            } catch {
-                ExtensionUI.alert(
-                    title: "Rendered clip saved",
-                    message: error.localizedDescription,
-                    from: projectEditor
-                )
-            }
-        }
-    }
-
-    private static func closeToolUI(from controller: UIViewController, toward projectEditor: UIViewController) {
+    private static func closeToolUI(
+        from controller: UIViewController,
+        toward projectEditor: UIViewController
+    ) {
         if let navigation = controller.navigationController,
            navigation.viewControllers.contains(where: { $0 === projectEditor }) {
             navigation.popToViewController(projectEditor, animated: true)
@@ -131,33 +112,6 @@ enum TimelineHandoffCoordinator {
            navigation.viewControllers.count > 1 {
             navigation.popViewController(animated: true)
         }
-    }
-
-    private static func invokeAddLayer(on controller: UIViewController) throws {
-        let noArgument = NSSelectorFromString("addLayerTapped")
-        if controller.responds(to: noArgument),
-           methodAcceptsObjectCount(noArgument, on: controller, expected: 0) {
-            _ = controller.perform(noArgument)
-            return
-        }
-
-        let oneArgument = NSSelectorFromString("addLayerTapped:")
-        if controller.responds(to: oneArgument),
-           methodAcceptsObjectCount(oneArgument, on: controller, expected: 1) {
-            _ = controller.perform(oneArgument, with: nil)
-            return
-        }
-
-        throw HandoffError.addLayerActionUnavailable
-    }
-
-    private static func methodAcceptsObjectCount(
-        _ selector: Selector,
-        on object: NSObject,
-        expected: UInt32
-    ) -> Bool {
-        guard let method = class_getInstanceMethod(type(of: object), selector) else { return false }
-        return method_getNumberOfArguments(method) == expected + 2
     }
 
     private static func findProjectEditor() -> UIViewController? {

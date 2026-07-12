@@ -10,6 +10,7 @@ struct PersonCutoutOptions: Sendable {
     var quality: Int
     var outputAlpha: Bool
     var manualMask: ManualMaskDefinition
+    var trackingPath: CutoutTrackingPath?
 }
 
 enum PersonCutoutError: Error, LocalizedError, Sendable {
@@ -133,13 +134,19 @@ final class PersonCutoutExporter: @unchecked Sendable {
         url: URL,
         time: Double,
         quality: Int,
-        manualMask: ManualMaskDefinition
+        manualMask: ManualMaskDefinition,
+        trackingPath: CutoutTrackingPath? = nil
     ) throws -> Data {
         let input = try sourceFrame(url: url, time: time)
+        let frameMask = trackedMaskDefinition(
+            manualMask,
+            trackingPath: trackingPath,
+            time: time
+        )
         let finalMask = try combinedMask(
             for: input,
             quality: quality,
-            manualMask: manualMask
+            manualMask: frameMask
         )
         let transparent = CIImage(color: .clear).cropped(to: input.extent)
         let output = input.applyingFilter("CIBlendWithMask", parameters: [
@@ -239,10 +246,15 @@ final class PersonCutoutExporter: @unchecked Sendable {
                     .transformed(by: translation)
                     .cropped(to: CGRect(origin: .zero, size: renderSize))
                 do {
+                    let frameMask = trackedMaskDefinition(
+                        options.manualMask,
+                        trackingPath: options.trackingPath,
+                        time: pts.seconds
+                    )
                     let mask = try combinedMask(
                         for: input,
                         quality: options.quality,
-                        manualMask: options.manualMask
+                        manualMask: frameMask
                     )
                     let background: CIImage
                     if options.outputAlpha {
@@ -309,6 +321,18 @@ final class PersonCutoutExporter: @unchecked Sendable {
             actualTime: &actual
         )
         return CIImage(cgImage: image)
+    }
+
+    private func trackedMaskDefinition(
+        _ definition: ManualMaskDefinition,
+        trackingPath: CutoutTrackingPath?,
+        time: Double
+    ) -> ManualMaskDefinition {
+        guard let trackingPath else { return definition }
+        return definition.transformed(
+            from: trackingPath.anchorRect,
+            to: trackingPath.rect(at: time)
+        )
     }
 
     private func combinedMask(
@@ -391,12 +415,15 @@ final class PersonCutoutStudioViewController: UIViewController {
     private let quality = UISegmentedControl(items: ["Fast", "Balanced", "Accurate"])
     private let editMode = UISegmentedControl(items: ["Keep Brush", "Erase Brush", "Box Select"])
     private let brushSlider = UISlider()
+    private let trackingQuality = UISegmentedControl(items: ["Fast", "Accurate"])
+    private let trackingFPS = UISegmentedControl(items: ["12 fps", "24 fps", "30 fps"])
     private let alphaSwitch = UISwitch()
     private let progress = UIProgressView(progressViewStyle: .default)
     private let status = ExtensionUI.label("Person segmentation uses the on-device Vision pipeline.")
     private weak var pageScrollView: UIScrollView?
     private var picker: MediaSourcePicker?
     private var sourceURL: URL?
+    private var trackingPath: CutoutTrackingPath?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -404,6 +431,8 @@ final class PersonCutoutStudioViewController: UIViewController {
         view.backgroundColor = .systemBackground
         quality.selectedSegmentIndex = 1
         editMode.selectedSegmentIndex = 0
+        trackingQuality.selectedSegmentIndex = 1
+        trackingFPS.selectedSegmentIndex = 1
         alphaSwitch.isOn = true
 
         brushSlider.minimumValue = 0.01
@@ -422,9 +451,11 @@ final class PersonCutoutStudioViewController: UIViewController {
 
         maskEditor.heightAnchor.constraint(equalToConstant: 300).isActive = true
         maskEditor.onMaskChange = { [weak self] definition in
-            self?.status.text = definition.isEmpty
+            guard let self else { return }
+            self.trackingPath = nil
+            self.status.text = definition.isEmpty
                 ? "Manual mask cleared. Vision segmentation only."
-                : "Manual mask updated. Tap Preview Composite to verify it."
+                : "Manual mask updated. Auto Track must be analyzed again."
         }
         maskEditor.onInteractionChanged = { [weak self] interacting in
             self?.setPageScrollingEnabled(!interacting)
@@ -442,20 +473,21 @@ final class PersonCutoutStudioViewController: UIViewController {
         let pickerRow = ExtensionUI.horizontalStack([photos, files])
         let loadFrame = ExtensionUI.secondaryButton("Load Frame at Playhead", action: UIAction { [weak self] _ in self?.loadFrameAtPlayhead() })
         let previewButton = ExtensionUI.button("Preview Composite", action: UIAction { [weak self] _ in self?.previewCurrentFrame() })
+        let analyzeTrack = ExtensionUI.button("Auto Track Selection", action: UIAction { [weak self] _ in self?.analyzeTracking() })
         let undo = ExtensionUI.secondaryButton("Undo Mask", action: UIAction { [weak self] _ in self?.maskEditor.undo() })
         let clear = ExtensionUI.secondaryButton("Clear Mask", action: UIAction { [weak self] _ in self?.maskEditor.clear() })
         let maskActions = ExtensionUI.horizontalStack([undo, clear])
         let export = ExtensionUI.secondaryButton("Export Cutout", action: UIAction { [weak self] action in
             self?.render(addToTimeline: false, source: action.sender as? UIView)
         })
-        let addToTimeline = ExtensionUI.button("Render & Open Add Layer", action: UIAction { [weak self] action in
+        let addToTimeline = ExtensionUI.button("Render & Return to Timeline", action: UIAction { [weak self] action in
             self?.render(addToTimeline: true, source: action.sender as? UIView)
         })
         let renderActions = ExtensionUI.horizontalStack([export, addToTimeline])
         let alphaRow = ExtensionUI.labeledSwitch("Transparent HEVC alpha", control: alphaSwitch)
 
         let stack = ExtensionUI.stack([
-            ExtensionUI.label("Load a frame, paint green areas to keep, paint red areas to remove, or drag a yellow selection box. Manual edits are applied to every frame using normalized coordinates."),
+            ExtensionUI.label("Load an anchor frame, paint or box-select the subject, then run Auto Track Selection. Vision re-segments every frame while the manual correction follows the tracked position and scale."),
             preview,
             pickerRow,
             sourceLabel,
@@ -466,13 +498,18 @@ final class PersonCutoutStudioViewController: UIViewController {
             brushSlider,
             maskEditor,
             maskActions,
+            ExtensionUI.label("Tracking quality", style: .footnote),
+            trackingQuality,
+            ExtensionUI.label("Tracking sample rate", style: .footnote),
+            trackingFPS,
+            analyzeTrack,
             previewButton,
             cutoutPreview,
             alphaRow,
             progress,
             renderActions,
             status,
-            ExtensionUI.label("Render & Open Add Layer saves the result as the newest Photos video and opens Alight Motion's Add Layer flow. True private-project insertion remains disabled until the host bridge is verified.", style: .footnote),
+            ExtensionUI.label("Render & Return to Timeline saves the result as the newest Photos video and safely returns to the project. The unsafe private Add Layer call was removed because it caused a completion-time crash.", style: .footnote),
         ])
         pageScrollView = ExtensionUI.installScrollStack(stack, in: self)
     }
@@ -483,6 +520,7 @@ final class PersonCutoutStudioViewController: UIViewController {
             switch result {
             case .success(let url):
                 self.sourceURL = url
+                self.trackingPath = nil
                 self.preview.load(url: url)
                 self.sourceLabel.text = url.lastPathComponent
                 self.status.text = "Ready. Load a frame at the playhead and edit its mask."
@@ -525,6 +563,7 @@ final class PersonCutoutStudioViewController: UIViewController {
         let time = preview.currentTime
         let qualityValue = quality.selectedSegmentIndex
         let manualMask = maskEditor.definition()
+        let activeTrackingPath = trackingPath
         status.text = "Generating cutout preview…"
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -534,7 +573,8 @@ final class PersonCutoutStudioViewController: UIViewController {
                         url: sourceURL,
                         time: time,
                         quality: qualityValue,
-                        manualMask: manualMask
+                        manualMask: manualMask,
+                        trackingPath: activeTrackingPath
                     )
                 }.value
                 self.cutoutPreview.image = UIImage(data: data)
@@ -542,6 +582,53 @@ final class PersonCutoutStudioViewController: UIViewController {
             } catch {
                 self.status.text = "Preview failed."
                 ExtensionUI.alert(title: "Cutout failed", message: error.localizedDescription, from: self)
+            }
+        }
+    }
+
+    private func analyzeTracking() {
+        guard let sourceURL else {
+            ExtensionUI.alert(title: "Choose a video", message: "Select a source video first.", from: self)
+            return
+        }
+        guard let seedRect = maskEditor.definition().trackingSeedRect() else {
+            ExtensionUI.alert(
+                title: "Create a tracking selection",
+                message: "Use Keep Brush or Box Select around the subject on the anchor frame first.",
+                from: self
+            )
+            return
+        }
+        let fpsValues = [12.0, 24.0, 30.0]
+        let fpsIndex = min(max(trackingFPS.selectedSegmentIndex, 0), fpsValues.count - 1)
+        let fps = fpsValues[fpsIndex]
+        let anchor = preview.currentTime
+        let accurate = trackingQuality.selectedSegmentIndex == 1
+        progress.progress = 0
+        status.text = "Tracking the selection forward and backward…"
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let path = try await Task.detached(priority: .userInitiated) {
+                    try CutoutTrackingEngine().track(
+                        inputURL: sourceURL,
+                        anchorTime: anchor,
+                        seedRect: seedRect,
+                        samplesPerSecond: fps,
+                        accurate: accurate
+                    ) { value in
+                        Task { @MainActor [weak self] in
+                            self?.progress.progress = Float(value)
+                        }
+                    }
+                }.value
+                self.trackingPath = path
+                self.status.text = "Auto Track ready: \(path.samples.count) tracked samples. Preview or render."
+            } catch {
+                self.trackingPath = nil
+                self.status.text = "Auto Track failed. Refine the selection and try again."
+                ExtensionUI.alert(title: "Tracking failed", message: error.localizedDescription, from: self)
             }
         }
     }
@@ -554,7 +641,8 @@ final class PersonCutoutStudioViewController: UIViewController {
         let options = PersonCutoutOptions(
             quality: quality.selectedSegmentIndex,
             outputAlpha: alphaSwitch.isOn,
-            manualMask: maskEditor.definition()
+            manualMask: maskEditor.definition(),
+            trackingPath: trackingPath
         )
         let output = FileManager.default.temporaryDirectory
             .appendingPathComponent("AE-Motion-Cutout-\(UUID().uuidString).mov")
@@ -575,14 +663,14 @@ final class PersonCutoutStudioViewController: UIViewController {
                 }.value
 
                 if addToTimeline {
-                    self.status.text = "Rendered. Preparing Add Layer handoff…"
+                    self.status.text = "Rendered. Saving and returning to timeline…"
                     TimelineHandoffCoordinator.renderResultReady(fileURL: output, from: self) { [weak self] result in
                         guard let self else { return }
                         switch result {
                         case .success:
-                            self.status.text = "Saved as the newest Photos clip and opening Add Layer."
+                            self.status.text = "Saved as the newest Photos clip and returning to the timeline."
                         case .failure(let error):
-                            self.status.text = "Rendered, but automatic handoff was incomplete."
+                            self.status.text = "Rendered, but the safe timeline return was incomplete."
                             ExtensionUI.alert(title: "Timeline handoff", message: error.localizedDescription, from: self)
                         }
                     }

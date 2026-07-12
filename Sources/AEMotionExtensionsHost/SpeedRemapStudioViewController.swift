@@ -74,7 +74,7 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
         let export = ExtensionUI.secondaryButton("Export Retimed Video", action: UIAction { [weak self] action in
             self?.renderVideo(addToTimeline: false, sourceView: action.sender as? UIView)
         })
-        let addToTimeline = ExtensionUI.button("Render & Open Add Layer", action: UIAction { [weak self] action in
+        let addToTimeline = ExtensionUI.button("Render & Return to Timeline", action: UIAction { [weak self] action in
             self?.renderVideo(addToTimeline: true, sourceView: action.sender as? UIView)
         })
         let renderActions = ExtensionUI.horizontalStack([export, addToTimeline])
@@ -99,7 +99,7 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
             progress,
             renderActions,
             shareCurve,
-            ExtensionUI.label("Curve editing locks page scrolling while a point or tangent is dragged. Render & Open Add Layer saves the result as the newest Photos clip and opens Alight Motion's Add Layer flow. Forward audio segments use spectral pitch preservation; freeze and reverse sections remain silent.", style: .footnote),
+            ExtensionUI.label("Curve editing locks page scrolling while a point or tangent is dragged. Render & Return to Timeline saves the result as the newest Photos clip and returns safely to the open project timeline. Forward audio segments use spectral pitch preservation; freeze and reverse sections remain silent.", style: .footnote),
         ]), in: self)
         refresh()
     }
@@ -325,14 +325,14 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
                     }
                 }.value
                 if addToTimeline {
-                    self.status.text = "Rendered. Preparing Add Layer handoff…"
+                    self.status.text = "Rendered. Saving and returning to timeline…"
                     TimelineHandoffCoordinator.renderResultReady(fileURL: outputURL, from: self) { [weak self] result in
                         guard let self else { return }
                         switch result {
                         case .success:
-                            self.status.text = "Saved as the newest Photos clip and opening Add Layer."
+                            self.status.text = "Saved as the newest Photos clip and returning to the timeline."
                         case .failure(let error):
-                            self.status.text = "Rendered, but automatic handoff was incomplete."
+                            self.status.text = "Rendered, but the safe timeline return was incomplete."
                             ExtensionUI.alert(title: "Timeline handoff", message: error.localizedDescription, from: self)
                         }
                     }
