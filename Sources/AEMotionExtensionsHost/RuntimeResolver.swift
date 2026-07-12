@@ -50,6 +50,36 @@ extension UIViewController {
         }
     }
 
+    /// Reads an Objective-C-visible property or backing ivar without KVC.
+    /// `value(forKey:)` throws NSUnknownKeyException when an outlet name differs
+    /// between Alight Motion builds; that was the v1.5.3 Add Effects crash.
+    @MainActor
+    private func aemotion_runtimeObject(named name: String) -> AnyObject? {
+        let selector = NSSelectorFromString(name)
+        if responds(to: selector),
+           let value = perform(selector)?.takeUnretainedValue() {
+            return value
+        }
+
+        let candidates = [name, "_\(name)"]
+        var currentClass: AnyClass? = type(of: self)
+        while let cls = currentClass {
+            for candidate in candidates {
+                if let ivar = class_getInstanceVariable(cls, candidate),
+                   let value = object_getIvar(self, ivar) {
+                    return value as AnyObject
+                }
+            }
+            currentClass = class_getSuperclass(cls)
+        }
+        return nil
+    }
+
+    @MainActor
+    private func aemotion_categoryCollection() -> UICollectionView? {
+        aemotion_runtimeObject(named: "categoriesCollectionView") as? UICollectionView
+    }
+
     @MainActor
     private func aemotion_installExtensionsCategoryIfNeeded() {
         guard objc_getAssociatedObject(self, &proxyKey) == nil else {
@@ -57,7 +87,7 @@ extension UIViewController {
             return
         }
 
-        guard let collection = value(forKey: "categoriesCollectionView") as? UICollectionView,
+        guard let collection = aemotion_categoryCollection(),
               let dataSource = collection.dataSource,
               !(dataSource is CategoryCollectionProxy) else {
             return
@@ -82,11 +112,6 @@ extension UIViewController {
         collection.reloadData()
         collection.collectionViewLayout.invalidateLayout()
 
-        // EffectPickerMainVC keeps a fixed height constraint sized for the stock
-        // category count. Adding one item pushes Repeat and later categories into
-        // a clipped extra row, which looks like Repeat was replaced. Recalculate
-        // the collection height after the new item is laid out so every original
-        // category remains visible.
         DispatchQueue.main.async { [weak self] in
             self?.aemotion_resizeCategoryCollectionIfNeeded()
         }
@@ -94,26 +119,30 @@ extension UIViewController {
 
     @MainActor
     private func aemotion_resizeCategoryCollectionIfNeeded() {
-        guard let collection = value(forKey: "categoriesCollectionView") as? UICollectionView else {
-            return
-        }
+        guard let collection = aemotion_categoryCollection() else { return }
 
         collection.collectionViewLayout.invalidateLayout()
         collection.layoutIfNeeded()
 
         let contentHeight = ceil(collection.collectionViewLayout.collectionViewContentSize.height)
-        guard contentHeight > 0 else { return }
+        guard contentHeight.isFinite, contentHeight > 0 else { return }
 
-        if let heightConstraint = value(forKey: "categoriesCollectionViewHeightConst") as? NSLayoutConstraint {
+        if let heightConstraint = aemotion_runtimeObject(
+            named: "categoriesCollectionViewHeightConst"
+        ) as? NSLayoutConstraint {
             if abs(heightConstraint.constant - contentHeight) > 0.5 {
                 heightConstraint.constant = contentHeight
-                view.setNeedsLayout()
-                view.layoutIfNeeded()
+                UIView.performWithoutAnimation {
+                    view.setNeedsLayout()
+                    view.layoutIfNeeded()
+                }
             }
         } else {
-            // Fail-safe for builds where the outlet name changes: allow the
-            // collection itself to scroll rather than clipping displaced items.
+            // The outlet is not present in every app build. Do not use KVC and do
+            // not crash; allow the added row to be reached by scrolling instead.
             collection.isScrollEnabled = true
+            collection.alwaysBounceVertical = false
+            collection.showsVerticalScrollIndicator = true
         }
     }
 }

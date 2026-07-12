@@ -22,3 +22,10 @@ The injected category increases the stock category count by one. `EffectPickerMa
 uses a fixed `categoriesCollectionViewHeightConst`, so v1.5.2 could clip Repeat and
 later categories. v1.5.3 recalculates that constraint from the collection layout's
 content size after insertion, preserving every stock category.
+
+### v1.5.4 safe runtime outlet lookup
+
+v1.5.3 queried `categoriesCollectionViewHeightConst` with KVC. On app builds
+without that exact Objective-C key, UIKit raises `NSUnknownKeyException` while
+opening Add Effects. v1.5.4 resolves the getter/backing ivar through the Objective-C
+runtime and falls back to scrolling when the constraint is unavailable.
