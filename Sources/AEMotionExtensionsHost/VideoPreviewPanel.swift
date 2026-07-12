@@ -15,7 +15,7 @@ final class VideoPreviewPanel: UIView {
     private let slider = UISlider()
     private let timeLabel = UILabel()
     private let player = AVPlayer()
-    private var periodicObserver: Any?
+    nonisolated(unsafe) private var periodicObserver: Any?
     private var isSeeking = false
 
     var currentTime: Double { player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0 }
