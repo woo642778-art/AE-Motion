@@ -35,6 +35,14 @@ final class BPMCalculatorViewController: UIViewController {
 
 final class EasingCurveViewController: UIViewController {
     private let duration = ExtensionUI.field("Duration frames", value: "30")
+    private var activePreset: PresetDocument?
+
+    init(initialPreset: PresetDocument? = nil) {
+        self.activePreset = initialPreset
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     private let samples = ExtensionUI.field("Samples", value: "32")
     private let editor = InteractiveCurveEditorView()
     private let output = UITextView()
@@ -71,6 +79,10 @@ final class EasingCurveViewController: UIViewController {
             guard let self else { return }
             ExtensionUI.share(text: self.csv, from: self, source: action.sender as? UIView)
         })
+        let savePreset = ExtensionUI.secondaryButton("Save Curve as XML Preset", action: UIAction { [weak self] _ in self?.saveCurrentPreset() })
+        let openPresets = ExtensionUI.secondaryButton("Open Preset Studio", action: UIAction { [weak self] _ in
+            self?.navigationController?.pushViewController(PresetLibraryViewController(), animated: true)
+        })
 
         pageScrollView = ExtensionUI.installScrollStack(ExtensionUI.stack([
             ExtensionUI.label("Flow-style easing editor. Drag points and orange tangent handles. Page scrolling locks automatically while the graph is being edited. Double-tap the graph to add a point."),
@@ -80,9 +92,10 @@ final class EasingCurveViewController: UIViewController {
             duration,
             samples,
             share,
+            ExtensionUI.horizontalStack([savePreset, openPresets]),
             output,
         ]), in: self)
-        applyPreset("Ease In-Out")
+        if let activePreset { applyPreset(activePreset) } else { applyPreset("Ease In-Out") }
     }
 
     private func setPageScrollingEnabled(_ enabled: Bool) {
@@ -156,6 +169,53 @@ final class EasingCurveViewController: UIViewController {
         editor.setPoints(points)
         isSyncing = false
         generate()
+    }
+
+    private func applyPreset(_ document: PresetDocument) {
+        do {
+            let curve = try EasingPresetAdapter.curve(from: document)
+            let points = curve.points.sorted { $0.time < $1.time }.map {
+                EditableCurvePoint(
+                    id: $0.id,
+                    x: $0.time,
+                    y: $0.value,
+                    incomingSlope: $0.incomingSlope,
+                    outgoingSlope: $0.outgoingSlope
+                )
+            }
+            isSyncing = true
+            editor.setPoints(points)
+            isSyncing = false
+            activePreset = document
+            generate()
+        } catch {
+            ExtensionUI.alert(title: "Preset could not be applied", message: error.localizedDescription, from: self)
+        }
+    }
+
+    private func saveCurrentPreset() {
+        let points = editor.points.map {
+            PresetKeyframe(
+                id: $0.id,
+                time: $0.x,
+                value: $0.y,
+                incomingSlope: $0.incomingSlope,
+                outgoingSlope: $0.outgoingSlope
+            )
+        }
+        let now = ISO8601DateFormatter().string(from: Date())
+        let document = PresetDocument(
+            id: "user.\(UUID().uuidString.lowercased())",
+            name: "Easing Curve",
+            summary: "Created from Easing Curve Generator.",
+            kind: .graph,
+            targets: ["easing.curve"],
+            tags: ["graph", "easing", "user"],
+            parameters: [.init(id: "easing.curve", name: "Easing Curve", value: .curve(.init(points: points)), keyframeable: true)],
+            createdAt: now,
+            modifiedAt: now
+        )
+        navigationController?.pushViewController(PresetEditorViewController(document: document, mode: .create), animated: true)
     }
 
     private func generate() {
@@ -239,6 +299,14 @@ final class LayerOffsetViewController: UIViewController {
 
 final class CameraShakeViewController: UIViewController {
     private let count = ExtensionUI.field("Samples", value: "24")
+    private var activePreset: PresetDocument?
+
+    init(initialPreset: PresetDocument? = nil) {
+        self.activePreset = initialPreset
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     private let amplitude = ExtensionUI.field("Amplitude", value: "20")
     private let decay = ExtensionUI.field("Decay 0–1", value: "0.93")
     private let seed = ExtensionUI.field("Seed", value: "7")
@@ -257,10 +325,53 @@ final class CameraShakeViewController: UIViewController {
             guard let self else { return }
             ExtensionUI.share(text: self.csv, from: self, source: nil)
         })
+        let savePreset = ExtensionUI.secondaryButton("Save Shake as XML Preset", action: UIAction { [weak self] _ in self?.saveCurrentPreset() })
+        let openPresets = ExtensionUI.secondaryButton("Open Preset Studio", action: UIAction { [weak self] _ in
+            self?.navigationController?.pushViewController(PresetLibraryViewController(), animated: true)
+        })
         ExtensionUI.installScrollStack(ExtensionUI.stack([
-            ExtensionUI.label("Generate deterministic X, Y and rotation samples."), count, amplitude, decay, seed, generateButton, share, output
+            ExtensionUI.label("Generate deterministic X, Y and rotation samples."), count, amplitude, decay, seed, generateButton, share,
+            ExtensionUI.horizontalStack([savePreset, openPresets]), output
         ]), in: self)
+        if let activePreset { applyPreset(activePreset) }
         generate()
+    }
+
+    private func applyPreset(_ document: PresetDocument) {
+        do {
+            let configuration = try ShakePresetAdapter.configuration(from: document)
+            count.text = String(configuration.count)
+            amplitude.text = String(configuration.amplitude)
+            decay.text = String(configuration.decay)
+            seed.text = String(configuration.seed)
+            activePreset = document
+        } catch {
+            ExtensionUI.alert(title: "Preset could not be applied", message: error.localizedDescription, from: self)
+        }
+    }
+
+    private func saveCurrentPreset() {
+        let now = ISO8601DateFormatter().string(from: Date())
+        let document = PresetDocument(
+            id: "user.\(UUID().uuidString.lowercased())",
+            name: "Camera Shake",
+            summary: "Created from Camera Shake Generator.",
+            kind: .motion,
+            targets: ["camera.shake"],
+            tags: ["shake", "camera", "user"],
+            parameters: [
+                .init(id: "count", name: "Samples", value: .integer(max(1, Int(count.text ?? "") ?? 24)), minimum: 1, maximum: 500),
+                .init(id: "amplitude", name: "Amplitude", value: .number(max(0, Double(amplitude.text ?? "") ?? 20)), minimum: 0, maximum: 500),
+                .init(id: "decay", name: "Decay", value: .number(max(0, min(1, Double(decay.text ?? "") ?? 0.93))), minimum: 0, maximum: 1),
+                .init(id: "seed", name: "Seed", value: .integer(max(0, Int(seed.text ?? "") ?? 7)), minimum: 0),
+            ],
+            macros: [.init(id: "strength", name: "Strength", minimum: 0, maximum: 1, defaultValue: 0.5, bindings: [
+                .init(parameterID: "amplitude", outputMinimum: 0, outputMaximum: 40),
+            ])],
+            createdAt: now,
+            modifiedAt: now
+        )
+        navigationController?.pushViewController(PresetEditorViewController(document: document, mode: .create), animated: true)
     }
 
     private func generate() {
@@ -304,38 +415,22 @@ final class ExpressionHelperViewController: UITableViewController {
     }
 }
 
-final class PresetBrowserViewController: UITableViewController {
-    private let presets: [(String, String)] = [
-        ("Smooth Push", "Position: 0 → 100, cubic ease-in-out, 18–24 frames"),
-        ("Impact Zoom", "Scale: 100 → 118 → 100 with fast overshoot"),
-        ("Elastic Overshoot", "Use Back easing and 8–14% overshoot"),
-        ("Handheld Drift", "Low-amplitude seeded shake with slow decay"),
-        ("Tracking Reveal", "Tracking wide → normal while opacity rises"),
-        ("Word Cascade", "Offset each word or layer by 2–4 frames"),
-    ]
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        title = "Motion Presets"
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "preset")
-    }
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { presets.count }
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let preset = presets[indexPath.row]
-        let cell = tableView.dequeueReusableCell(withIdentifier: "preset", for: indexPath)
-        var config = cell.defaultContentConfiguration()
-        config.text = preset.0
-        config.secondaryText = preset.1
-        cell.contentConfiguration = config
-        return cell
-    }
-}
-
 final class ColorPaletteViewController: UIViewController {
     private let hue = ExtensionUI.field("Hue 0–360", value: "210")
     private let saturation = ExtensionUI.field("Saturation 0–1", value: "0.75")
     private let lightness = ExtensionUI.field("Lightness 0–1", value: "0.55")
     private let paletteStack = UIStackView()
+    private let sourceLabel = ExtensionUI.label("Analogous palette")
+    private var activePreset: PresetDocument?
+    private var currentColors: [PresetColor] = []
     private var hexText = ""
+
+    init(initialPreset: PresetDocument? = nil) {
+        self.activePreset = initialPreset
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -343,43 +438,106 @@ final class ColorPaletteViewController: UIViewController {
         view.backgroundColor = .systemBackground
         paletteStack.axis = .vertical
         paletteStack.spacing = 8
-        let generateButton = ExtensionUI.button("Generate", action: UIAction { [weak self] _ in self?.generate() })
-        let share = ExtensionUI.button("Share HEX", action: UIAction { [weak self] action in
+
+        let generateButton = ExtensionUI.button("Generate Analogous Palette", action: UIAction { [weak self] _ in
+            self?.generate()
+        })
+        let share = ExtensionUI.button("Share HEX", action: UIAction { [weak self] _ in
             guard let self else { return }
             ExtensionUI.share(text: self.hexText, from: self, source: nil)
         })
+        let savePreset = ExtensionUI.secondaryButton("Save Palette as XML Preset", action: UIAction { [weak self] _ in
+            self?.saveCurrentPreset()
+        })
+        let openPresets = ExtensionUI.secondaryButton("Open Preset Studio", action: UIAction { [weak self] _ in
+            self?.navigationController?.pushViewController(PresetLibraryViewController(), animated: true)
+        })
+
         ExtensionUI.installScrollStack(ExtensionUI.stack([
-            ExtensionUI.label("Build a five-color analogous palette."), hue, saturation, lightness, generateButton, share, paletteStack
+            ExtensionUI.label("Build a five-color analogous palette or apply a shared XML color preset."),
+            sourceLabel,
+            hue,
+            saturation,
+            lightness,
+            generateButton,
+            share,
+            ExtensionUI.horizontalStack([savePreset, openPresets]),
+            paletteStack,
         ]), in: self)
-        generate()
+
+        if let activePreset {
+            applyPreset(activePreset)
+        } else {
+            generate()
+        }
     }
 
     private func generate() {
-        paletteStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        let colors = ColorPaletteGenerator.analogous(
+        let generated = ColorPaletteGenerator.analogous(
             hue: Double(hue.text ?? "") ?? 210,
             saturation: max(0, min(1, Double(saturation.text ?? "") ?? 0.75)),
             lightness: max(0, min(1, Double(lightness.text ?? "") ?? 0.55))
-        )
-        let hexes = colors.map { color -> String in
-            let r = Int((color.red * 255).rounded())
-            let g = Int((color.green * 255).rounded())
-            let b = Int((color.blue * 255).rounded())
-            return String(format: "#%02X%02X%02X", r, g, b)
+        ).map { PresetColor(red: $0.red, green: $0.green, blue: $0.blue, alpha: $0.alpha) }
+        activePreset = nil
+        sourceLabel.text = "Analogous palette generated from HSL controls."
+        display(generated)
+    }
+
+    private func applyPreset(_ document: PresetDocument) {
+        do {
+            let colors = try ColorPresetAdapter.colors(from: document)
+            activePreset = document
+            sourceLabel.text = "Preset: \(document.name)"
+            display(colors)
+        } catch {
+            ExtensionUI.alert(title: "Preset could not be applied", message: error.localizedDescription, from: self)
+            generate()
         }
+    }
+
+    private func display(_ colors: [PresetColor]) {
+        currentColors = colors
+        paletteStack.arrangedSubviews.forEach { view in
+            paletteStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        let hexes = colors.map(Self.hex)
         hexText = hexes.joined(separator: "\n")
+
         for (index, color) in colors.enumerated() {
             let row = UILabel()
             row.text = "   \(hexes[index])"
             row.font = .monospacedSystemFont(ofSize: 15, weight: .semibold)
             let luminance = 0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue
             row.textColor = luminance > 0.62 ? .black : .white
-            row.backgroundColor = UIColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 1)
+            row.backgroundColor = UIColor(
+                red: CGFloat(max(0, min(1, color.red))),
+                green: CGFloat(max(0, min(1, color.green))),
+                blue: CGFloat(max(0, min(1, color.blue))),
+                alpha: CGFloat(max(0, min(1, color.alpha)))
+            )
             row.layer.cornerRadius = 8
             row.layer.masksToBounds = true
             row.heightAnchor.constraint(equalToConstant: 52).isActive = true
             paletteStack.addArrangedSubview(row)
         }
+    }
+
+    private func saveCurrentPreset() {
+        guard currentColors.count >= 2 else {
+            ExtensionUI.alert(title: "Palette unavailable", message: "Generate or apply a palette before saving.", from: self)
+            return
+        }
+        let suggestedName = activePreset.map { "\($0.name) Copy" } ?? "Analogous Color Palette"
+        let document = ColorPalettePresetFactory.document(colors: currentColors, name: suggestedName)
+        navigationController?.pushViewController(PresetEditorViewController(document: document, mode: .create), animated: true)
+    }
+
+    private static func hex(_ color: PresetColor) -> String {
+        let r = Int((max(0, min(1, color.red)) * 255).rounded())
+        let g = Int((max(0, min(1, color.green)) * 255).rounded())
+        let b = Int((max(0, min(1, color.blue)) * 255).rounded())
+        return String(format: "#%02X%02X%02X", r, g, b)
     }
 }
 #endif

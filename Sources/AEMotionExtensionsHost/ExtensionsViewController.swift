@@ -91,7 +91,8 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
         case "camera.shake": return CameraShakeViewController()
         case "random.values": return RandomValuesViewController()
         case "expression.helper": return ExpressionHelperViewController()
-        case "text.animator", "motion.presets": return PresetBrowserViewController()
+        case "preset.library": return PresetLibraryViewController()
+        case "resource.hub": return ResourceHubViewController()
         case "bpm.frames": return BPMCalculatorViewController()
         case "color.palette": return ColorPaletteViewController()
         case "layer.offset": return LayerOffsetViewController()
@@ -110,6 +111,8 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
         case "camera.shake": return "waveform.path"
         case "random.values": return "dice"
         case "expression.helper": return "function"
+        case "preset.library": return "slider.horizontal.3"
+        case "resource.hub": return "link"
         case "bpm.frames": return "metronome"
         case "color.palette": return "paintpalette"
         case "layer.offset": return "square.stack.3d.down.right"

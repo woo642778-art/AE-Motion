@@ -75,8 +75,11 @@ final class HostDiagnosticsViewController: UIViewController {
                 "App: \(Bundle.main.bundleIdentifier ?? "unknown") \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "")",
                 "Mode: allowlisted safe scan",
                 "",
-                "=== LIVE VIEW CONTROLLERS ===",
+                "=== EFFECT CATEGORY INTEGRITY ===",
             ]
+            lines.append(contentsOf: EffectCategoryDiagnostics.scan().lines)
+            lines.append("")
+            lines.append("=== LIVE VIEW CONTROLLERS ===")
 
             let windows = UIApplication.shared.connectedScenes
                 .compactMap { $0 as? UIWindowScene }

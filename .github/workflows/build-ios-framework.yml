@@ -12,6 +12,8 @@ jobs:
         run: swift package resolve
       - name: Run core tests
         run: swift test
+      - name: Run effect metadata tests
+        run: python3 scripts/test-normalize-effect-search-metadata.py -v
       - name: Build iOS framework
         run: ./scripts/build-ios-framework.sh
       - name: Collect products

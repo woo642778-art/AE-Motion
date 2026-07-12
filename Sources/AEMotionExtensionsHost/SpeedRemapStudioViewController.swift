@@ -26,6 +26,16 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
     private var sourceURL: URL?
     private var sourceDuration: Double = 3
     private var isSyncingEditor = false
+    private var activePreset: PresetDocument?
+
+    init(initialPreset: PresetDocument? = nil) {
+        self.activePreset = initialPreset
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
     private var keyframes: [SpeedKeyframe] = [
         .init(outputTime: 0, velocity: 1, incomingSlope: 0, outgoingSlope: 0),
         .init(outputTime: 3, velocity: 1, incomingSlope: 0, outgoingSlope: 0),
@@ -87,6 +97,12 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
         let shareCurve = ExtensionUI.secondaryButton("Share Speed Curve JSON", action: UIAction { [weak self] action in
             self?.shareCurve(sourceView: action.sender as? UIView)
         })
+        let savePreset = ExtensionUI.secondaryButton("Save Current as XML Preset", action: UIAction { [weak self] _ in
+            self?.saveCurrentPreset()
+        })
+        let openPresets = ExtensionUI.secondaryButton("Open Preset Studio", action: UIAction { [weak self] _ in
+            self?.navigationController?.pushViewController(PresetLibraryViewController(), animated: true)
+        })
 
         pageScrollView = ExtensionUI.installScrollStack(ExtensionUI.stack([
             ExtensionUI.label("Watch the source while editing. Drag blue points and orange tangent handles. Double-tap the graph to add a point."),
@@ -106,9 +122,11 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
             renderActions,
             cancelRenderButton,
             shareCurve,
+            ExtensionUI.horizontalStack([savePreset, openPresets]),
             ExtensionUI.label("Curve editing locks page scrolling while a point or tangent is dragged. Render & Return to Timeline saves the result as the newest Photos clip and returns safely to the open project timeline. Forward audio segments use spectral pitch preservation; freeze and reverse sections remain silent.", style: .footnote),
         ]), in: self)
         refresh()
+        if let activePreset { applyPreset(activePreset) }
     }
 
     private func makePresetScroller() -> UIView {
@@ -161,7 +179,7 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
             .init(outputTime: sourceDuration, velocity: 1, incomingSlope: 0, outgoingSlope: 0),
         ]
         sourceLabel.text = "\(url.lastPathComponent)\nSource duration: \(String(format: "%.3f", sourceDuration)) s"
-        refresh()
+        if let activePreset { applyPreset(activePreset) } else { refresh() }
     }
 
     private func applyPreset(_ name: String) {
@@ -190,6 +208,47 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
             ]
         }
         refresh()
+    }
+
+
+    private func applyPreset(_ document: PresetDocument) {
+        do {
+            keyframes = try SpeedPresetAdapter.keyframes(from: document, duration: max(0.5, sourceDuration))
+            activePreset = document
+            refresh()
+            status.text = "Applied preset: \(document.name)"
+        } catch {
+            ExtensionUI.alert(title: "Preset could not be applied", message: error.localizedDescription, from: self)
+        }
+    }
+
+    private func saveCurrentPreset() {
+        let duration = max(0.001, keyframes.last?.outputTime ?? sourceDuration)
+        let normalized = keyframes.map { frame in
+            PresetKeyframe(
+                id: frame.id,
+                time: frame.outputTime / duration,
+                value: frame.velocity,
+                incomingSlope: frame.incomingSlope.map { $0 * duration },
+                outgoingSlope: frame.outgoingSlope.map { $0 * duration }
+            )
+        }
+        let now = ISO8601DateFormatter().string(from: Date())
+        let document = PresetDocument(
+            id: "user.\(UUID().uuidString.lowercased())",
+            name: "Velocity Preset",
+            summary: "Created from Speed Remap Studio.",
+            author: "",
+            kind: .velocity,
+            targets: ["speed.remap"],
+            tags: ["velocity", "speed", "user"],
+            parameters: [
+                .init(id: "velocity.curve", name: "Velocity Curve", value: .curve(KeyframeCurve(points: normalized)), defaultValue: .curve(KeyframeCurve(points: normalized)), keyframeable: true),
+            ],
+            createdAt: now,
+            modifiedAt: now
+        )
+        navigationController?.pushViewController(PresetEditorViewController(document: document, mode: .create), animated: true)
     }
 
     private func addKeyframe(at time: Double) {

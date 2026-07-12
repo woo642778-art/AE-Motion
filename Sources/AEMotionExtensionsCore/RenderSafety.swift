@@ -42,29 +42,41 @@ public enum RenderSizePolicy {
 }
 
 public enum EffectSearchMetadata {
+    /// These are the native XML category keys used by the target Alight Motion build.
+    /// The visible labels are Move/Transform and Distortion/Warp, but the data keys are
+    /// `transform` and `distort`. Replacing them with `move`/`warp` empties those tabs.
     private static let supportedCategories: Set<String> = [
-        "color", "drawing", "blur", "warp", "procedural", "3d",
-        "move", "repeat", "matte", "opacity", "text",
+        "color", "drawing", "blur", "distort", "procedural", "3d",
+        "transform", "repeat", "matte", "opacity", "text",
     ]
 
     public static func normalizedCategory(_ rawValue: String?) -> String {
         let value = (rawValue ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
+        let compact = value
+            .replacingOccurrences(of: "&", with: "/")
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "_", with: "/")
+            .replacingOccurrences(of: "-", with: "/")
 
         if supportedCategories.contains(value) { return value }
 
-        switch value {
+        switch compact {
+        case "move", "transform", "move/transform", "transform/move":
+            return "transform"
+        case "warp", "distort", "distortion", "distortion/warp", "distort/warp", "warp/distortion", "warp/distort":
+            return "distort"
         case "lighting", "light", "glow", "edge":
             return "drawing"
-        case "stylize", "style", "generator", "generate":
+        case "stylize", "style", "generator", "generate", "other", "":
             return "procedural"
-        case "distort", "distortion", "transform", "transition":
-            return "warp"
-        case "colour", "grading", "color grading":
+        case "colour", "grading", "colorgrading":
             return "color"
-        case "mask", "matte/mask", "matte-mask":
+        case "mask", "matte/mask", "mattemask":
             return "matte"
+        case "transition":
+            return "distort"
         default:
             return "procedural"
         }
@@ -73,7 +85,8 @@ public enum EffectSearchMetadata {
     public static func normalizedTags(
         name: String,
         id: String,
-        existing: String?
+        existing: String?,
+        category: String? = nil
     ) -> String {
         var ordered: [String] = []
         var seen = Set<String>()
@@ -87,18 +100,25 @@ public enum EffectSearchMetadata {
         }
 
         let separators = CharacterSet.alphanumerics.inverted
-        for value in (existing ?? "").components(separatedBy: CharacterSet(charactersIn: ",;")) {
-            add(value)
-        }
+        for value in (existing ?? "").components(separatedBy: CharacterSet(charactersIn: ",;")) { add(value) }
         for value in name.components(separatedBy: separators) { add(value) }
         let idTokens = id.components(separatedBy: separators).filter { token in
             !["com", "alightcreative", "effects", "effect"].contains(token.lowercased())
         }
         for value in idTokens { add(value) }
 
-        let searchable = ([name, id, existing ?? ""].joined(separator: " ")).lowercased()
+        let searchable = ([name, id, existing ?? "", category ?? ""].joined(separator: " ")).lowercased()
         if searchable.contains("bcc") || searchable.contains("boris") {
             ["bcc", "bbc", "boris", "borisfx", "boris fx", "continuum"].forEach(add)
+        }
+
+        switch normalizedCategory(category) {
+        case "transform":
+            ["move", "transform", "move transform", "move/transform"].forEach(add)
+        case "distort":
+            ["distort", "distortion", "warp", "distortion warp", "distortion/warp"].forEach(add)
+        default:
+            break
         }
 
         return ordered.joined(separator: ",")

@@ -31,6 +31,8 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "cutout.person" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "dead.frames" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "depth.map" })
+        XCTAssertTrue(ToolRegistry.all.contains { $0.id == "preset.library" })
+        XCTAssertTrue(ToolRegistry.all.contains { $0.id == "resource.hub" })
     }
     func testConstantSpeedCurve() throws {
         let curve = try SpeedCurve.constant(duration: 3, velocity: 2)
@@ -79,7 +81,7 @@ final class CoreTests: XCTestCase {
     func testEffectSearchMetadataNormalizesUnsupportedCategories() {
         XCTAssertEqual(EffectSearchMetadata.normalizedCategory("lighting"), "drawing")
         XCTAssertEqual(EffectSearchMetadata.normalizedCategory("stylize"), "procedural")
-        XCTAssertEqual(EffectSearchMetadata.normalizedCategory("distort"), "warp")
+        XCTAssertEqual(EffectSearchMetadata.normalizedCategory("distort"), "distort")
         XCTAssertEqual(EffectSearchMetadata.normalizedCategory("blur"), "blur")
     }
 

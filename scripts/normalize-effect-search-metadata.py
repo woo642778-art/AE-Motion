@@ -18,13 +18,15 @@ import re
 from pathlib import Path
 
 SUPPORTED = {
-    "color", "drawing", "blur", "warp", "procedural", "3d",
-    "move", "repeat", "matte", "opacity", "text",
+    "color", "drawing", "blur", "distort", "procedural", "3d",
+    "transform", "repeat", "matte", "opacity", "text",
 }
 CATEGORY_MAP = {
     "lighting": "drawing", "light": "drawing", "glow": "drawing", "edge": "drawing",
     "stylize": "procedural", "style": "procedural", "generator": "procedural", "generate": "procedural",
-    "distort": "warp", "distortion": "warp", "transform": "warp", "transition": "warp",
+    "move": "transform", "move/transform": "transform", "transform": "transform",
+    "warp": "distort", "distort": "distort", "distortion": "distort",
+    "distortion/warp": "distort", "transition": "distort",
     "colour": "color", "grading": "color", "color grading": "color",
     "mask": "matte", "matte/mask": "matte", "matte-mask": "matte",
 }
@@ -40,7 +42,7 @@ def normalize_category(raw: str | None) -> str:
     return CATEGORY_MAP.get(value, "procedural")
 
 
-def normalize_tags(name: str, effect_id: str, existing: str | None) -> str:
+def normalize_tags(name: str, effect_id: str, existing: str | None, category: str | None = None) -> str:
     ordered: list[str] = []
     seen: set[str] = set()
 
@@ -58,9 +60,17 @@ def normalize_tags(name: str, effect_id: str, existing: str | None) -> str:
         if token.lower() not in {"com", "alightcreative", "effects", "effect"}:
             add(token)
 
-    searchable = f"{name} {effect_id} {existing or ''}".lower()
+    searchable = f"{name} {effect_id} {existing or ''} {category or ''}".lower()
     if "bcc" in searchable or "boris" in searchable:
         for alias in ("bcc", "bbc", "boris", "borisfx", "boris fx", "continuum"):
+            add(alias)
+
+    normalized = normalize_category(category)
+    if normalized == "transform":
+        for alias in ("move", "transform", "move transform", "move/transform"):
+            add(alias)
+    elif normalized == "distort":
+        for alias in ("distort", "distortion", "warp", "distortion warp", "distortion/warp"):
             add(alias)
 
     return ",".join(ordered)
@@ -95,7 +105,7 @@ def normalize_file(path: Path) -> bool:
     name = attrs.get("name", path.stem)
     effect_id = attrs.get("id", path.stem)
     category = normalize_category(attrs.get("category"))
-    tags = normalize_tags(name, effect_id, attrs.get("tags"))
+    tags = normalize_tags(name, effect_id, attrs.get("tags"), attrs.get("category"))
 
     updated = replace_attribute(opening, "category", category)
     updated = replace_attribute(updated, "tags", tags)
@@ -118,6 +128,11 @@ def resolve_effects_directory(target: Path) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--require-native-groups",
+        action="store_true",
+        help="Fail when the packaged effect set has no native transform or distort categories.",
+    )
     parser.add_argument("target", type=Path, help="AlightMotion.app or BuiltinEffects directory")
     args = parser.parse_args()
 
@@ -125,6 +140,28 @@ def main() -> int:
     files = sorted(effects.glob("*.xml"))
     changed = sum(1 for path in files if normalize_file(path))
     print(f"Normalized {changed} of {len(files)} effect XML files in {effects}")
+
+    if args.require_native_groups:
+        counts: dict[str, int] = {}
+        for path in files:
+            opening_match = EFFECT_RE.search(path.read_text(encoding="utf-8"))
+            if not opening_match:
+                continue
+            category = attributes(opening_match.group(0)).get("category", "").lower()
+            counts[category] = counts.get(category, 0) + 1
+        missing: list[str] = []
+        if counts.get("transform", 0) == 0:
+            missing.append("Move/Transform ('transform')")
+        if counts.get("distort", 0) == 0:
+            missing.append("Distortion/Warp ('distort')")
+        if missing:
+            import sys
+            print(
+                "Category integrity failure: " + ", ".join(missing) +
+                ". The source IPA has already lost native category information; use the v1.9.1 Beta 10 effect set as the packaging base.",
+                file=sys.stderr,
+            )
+            return 2
     return 0
 
 
