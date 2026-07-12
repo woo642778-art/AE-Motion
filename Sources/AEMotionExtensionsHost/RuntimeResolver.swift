@@ -4,8 +4,6 @@ import UIKit
 import ObjectiveC.runtime
 
 @objc final class RuntimeResolver: NSObject {
-    // EffectPickerCategoryVC is the per-category EFFECT GRID. Hooking it caused
-    // Add Effects to crash. The category tiles live in EffectPickerMainVC.
     static let categoryControllerNames = [
         "AlightMotion.EffectPickerMainVC",
         "_TtC12AlightMotion18EffectPickerMainVC",
@@ -40,15 +38,13 @@ nonisolated(unsafe) private var proxyKey: UInt8 = 0
 
 extension UIViewController {
     @objc fileprivate func aemotion_viewDidAppear(_ animated: Bool) {
-        // After method exchange this calls EffectPickerMainVC's original method.
+        // After swizzling this invokes EffectPickerMainVC's original implementation.
         self.aemotion_viewDidAppear(animated)
 
         guard String(describing: type(of: self)).contains("EffectPickerMainVC") else {
             return
         }
 
-        // Do not replace a collection-view data source during its appearance
-        // callbacks. Install on the next main-loop turn instead.
         DispatchQueue.main.async { [weak self] in
             self?.aemotion_installExtensionsCategoryIfNeeded()
         }
@@ -56,10 +52,11 @@ extension UIViewController {
 
     @MainActor
     private func aemotion_installExtensionsCategoryIfNeeded() {
-        guard objc_getAssociatedObject(self, &proxyKey) == nil else { return }
+        guard objc_getAssociatedObject(self, &proxyKey) == nil else {
+            aemotion_resizeCategoryCollectionIfNeeded()
+            return
+        }
 
-        // This is the exact IBOutlet found in EffectPickerMainVC. Never use the
-        // first UICollectionView recursively: the screen contains multiple lists.
         guard let collection = value(forKey: "categoriesCollectionView") as? UICollectionView,
               let dataSource = collection.dataSource,
               !(dataSource is CategoryCollectionProxy) else {
@@ -84,6 +81,40 @@ extension UIViewController {
         collection.delegate = proxy
         collection.reloadData()
         collection.collectionViewLayout.invalidateLayout()
+
+        // EffectPickerMainVC keeps a fixed height constraint sized for the stock
+        // category count. Adding one item pushes Repeat and later categories into
+        // a clipped extra row, which looks like Repeat was replaced. Recalculate
+        // the collection height after the new item is laid out so every original
+        // category remains visible.
+        DispatchQueue.main.async { [weak self] in
+            self?.aemotion_resizeCategoryCollectionIfNeeded()
+        }
+    }
+
+    @MainActor
+    private func aemotion_resizeCategoryCollectionIfNeeded() {
+        guard let collection = value(forKey: "categoriesCollectionView") as? UICollectionView else {
+            return
+        }
+
+        collection.collectionViewLayout.invalidateLayout()
+        collection.layoutIfNeeded()
+
+        let contentHeight = ceil(collection.collectionViewLayout.collectionViewContentSize.height)
+        guard contentHeight > 0 else { return }
+
+        if let heightConstraint = value(forKey: "categoriesCollectionViewHeightConst") as? NSLayoutConstraint {
+            if abs(heightConstraint.constant - contentHeight) > 0.5 {
+                heightConstraint.constant = contentHeight
+                view.setNeedsLayout()
+                view.layoutIfNeeded()
+            }
+        } else {
+            // Fail-safe for builds where the outlet name changes: allow the
+            // collection itself to scroll rather than clipping displaced items.
+            collection.isScrollEnabled = true
+        }
     }
 }
 #endif

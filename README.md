@@ -15,3 +15,10 @@ swift test --disable-sandbox
 The iOS dynamic framework requires macOS and Xcode. Build with `scripts/build-ios-framework.sh`, inject with `scripts/inject-framework.sh`, and re-sign the resulting IPA using credentials and provisioning controlled by the user. The source does not modify authentication, Keychain, subscription, or account behavior.
 
 The first source release contains the utility engines and panel shell. Individual UIKit controls for each utility are connected during the macOS integration pass because the host layout and runtime behavior must be tested on a real iPhone.
+
+### v1.5.3 category height fix
+
+The injected category increases the stock category count by one. `EffectPickerMainVC`
+uses a fixed `categoriesCollectionViewHeightConst`, so v1.5.2 could clip Repeat and
+later categories. v1.5.3 recalculates that constraint from the collection layout's
+content size after insertion, preserving every stock category.
