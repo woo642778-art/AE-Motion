@@ -20,8 +20,8 @@ final class ExtensionsCategoryCell: UICollectionViewCell {
 }
 
 final class CategoryCollectionProxy: NSObject, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
-    weak var originalDataSource: UICollectionViewDataSource?
-    weak var originalDelegate: UICollectionViewDelegate?
+    nonisolated(unsafe) weak var originalDataSource: UICollectionViewDataSource?
+    nonisolated(unsafe) weak var originalDelegate: UICollectionViewDelegate?
     weak var presenter: UIViewController?
     private weak var collectionView: UICollectionView?
     private var insertionSection = 0
@@ -78,7 +78,11 @@ final class CategoryCollectionProxy: NSObject, UICollectionViewDataSource, UICol
            let size = flow.collectionView?(collectionView, layout: collectionViewLayout, sizeForItemAt: originalPath(indexPath)) { return size }
         return CGSize(width: max(120, collectionView.bounds.width - 32), height: 52)
     }
-    override func responds(to selector: Selector!) -> Bool { super.responds(to: selector) || originalDataSource?.responds(to: selector) == true || originalDelegate?.responds(to: selector) == true }
+    override func responds(to selector: Selector!) -> Bool {
+        if super.responds(to: selector) { return true }
+        if originalDataSource?.responds(to: selector) == true { return true }
+        return originalDelegate?.responds(to: selector) == true
+    }
     override func forwardingTarget(for selector: Selector!) -> Any? {
         if originalDelegate?.responds(to: selector) == true { return originalDelegate }
         if originalDataSource?.responds(to: selector) == true { return originalDataSource }

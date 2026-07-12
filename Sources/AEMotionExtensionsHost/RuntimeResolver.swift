@@ -25,7 +25,7 @@ import ObjectiveC.runtime
     }
 }
 
-private var proxyKey: UInt8 = 0
+nonisolated(unsafe) private var proxyKey: UInt8 = 0
 
 extension UIViewController {
     @objc fileprivate func aemotion_viewDidAppear(_ animated: Bool) {
