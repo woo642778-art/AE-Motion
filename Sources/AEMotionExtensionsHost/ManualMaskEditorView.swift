@@ -168,7 +168,7 @@ private final class ManualMaskCanvasView: UIView, UIGestureRecognizerDelegate {
         context.restoreGState()
     }
 
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard gestureRecognizer === drawGesture else { return true }
         return normalizedPoint(from: gestureRecognizer.location(in: self)) != nil
     }

@@ -158,7 +158,7 @@ final class InteractiveCurveEditorView: UIView, UIGestureRecognizerDelegate {
         drawPointsAndHandles(context: context, rect: graphRect)
     }
 
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard gestureRecognizer === curvePanGesture else { return true }
         let location = gestureRecognizer.location(in: self)
         let graphRect = bounds.inset(by: graphInset)
