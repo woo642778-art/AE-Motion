@@ -16,6 +16,7 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
     private let status = ExtensionUI.label("1× normal · 0 freeze · negative reverse")
     private let includeAudioSwitch = UISwitch()
     private let preservePitchSwitch = UISwitch()
+    private weak var pageScrollView: UIScrollView?
 
     private var picker: MediaSourcePicker?
     private var sourceURL: URL?
@@ -46,6 +47,9 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
                 self.status.text = "Selected: \(String(format: "%.3f", point.x)) s · \(String(format: "%.3f", point.y))×"
             }
         }
+        curveEditor.onInteractionChanged = { [weak self] interacting in
+            self?.setPageScrollingEnabled(!interacting)
+        }
 
         table.dataSource = self
         table.delegate = self
@@ -67,14 +71,18 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
         })
         let editRow = ExtensionUI.horizontalStack([add, delete])
 
-        let export = ExtensionUI.button("Export Retimed Video", action: UIAction { [weak self] action in
-            self?.exportVideo(sourceView: action.sender as? UIView)
+        let export = ExtensionUI.secondaryButton("Export Retimed Video", action: UIAction { [weak self] action in
+            self?.renderVideo(addToTimeline: false, sourceView: action.sender as? UIView)
         })
+        let addToTimeline = ExtensionUI.button("Render & Open Add Layer", action: UIAction { [weak self] action in
+            self?.renderVideo(addToTimeline: true, sourceView: action.sender as? UIView)
+        })
+        let renderActions = ExtensionUI.horizontalStack([export, addToTimeline])
         let shareCurve = ExtensionUI.secondaryButton("Share Speed Curve JSON", action: UIAction { [weak self] action in
             self?.shareCurve(sourceView: action.sender as? UIView)
         })
 
-        ExtensionUI.installScrollStack(ExtensionUI.stack([
+        pageScrollView = ExtensionUI.installScrollStack(ExtensionUI.stack([
             ExtensionUI.label("Watch the source while editing. Drag blue points and orange tangent handles. Double-tap the graph to add a point."),
             preview,
             pickerRow,
@@ -89,9 +97,9 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
             table,
             status,
             progress,
-            export,
+            renderActions,
             shareCurve,
-            ExtensionUI.label("Forward audio segments use spectral pitch preservation. Freeze and reverse sections are silent in this build.", style: .footnote),
+            ExtensionUI.label("Curve editing locks page scrolling while a point or tangent is dragged. Render & Open Add Layer saves the result as the newest Photos clip and opens Alight Motion's Add Layer flow. Forward audio segments use spectral pitch preservation; freeze and reverse sections remain silent.", style: .footnote),
         ]), in: self)
         refresh()
     }
@@ -281,7 +289,7 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
         present(alert, animated: true)
     }
 
-    private func exportVideo(sourceView: UIView?) {
+    private func renderVideo(addToTimeline: Bool, sourceView: UIView?) {
         guard let sourceURL else {
             ExtensionUI.alert(title: "Choose a video", message: "Select a source video first.", from: self)
             return
@@ -301,7 +309,7 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
             preservePitch: preservePitchSwitch.isOn
         )
         progress.progress = 0
-        status.text = "Exporting retimed video…"
+        status.text = addToTimeline ? "Rendering for timeline handoff…" : "Exporting retimed video…"
 
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -316,13 +324,32 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
                         Task { @MainActor [weak self] in self?.progress.progress = Float(value) }
                     }
                 }.value
-                self.status.text = "Export complete."
-                ExtensionUI.share(fileURL: outputURL, from: self, source: sourceView)
+                if addToTimeline {
+                    self.status.text = "Rendered. Preparing Add Layer handoff…"
+                    TimelineHandoffCoordinator.renderResultReady(fileURL: outputURL, from: self) { [weak self] result in
+                        guard let self else { return }
+                        switch result {
+                        case .success:
+                            self.status.text = "Saved as the newest Photos clip and opening Add Layer."
+                        case .failure(let error):
+                            self.status.text = "Rendered, but automatic handoff was incomplete."
+                            ExtensionUI.alert(title: "Timeline handoff", message: error.localizedDescription, from: self)
+                        }
+                    }
+                } else {
+                    self.status.text = "Export complete."
+                    ExtensionUI.share(fileURL: outputURL, from: self, source: sourceView)
+                }
             } catch {
                 self.status.text = "Export failed."
                 ExtensionUI.alert(title: "Export failed", message: error.localizedDescription, from: self)
             }
         }
+    }
+
+    private func setPageScrollingEnabled(_ enabled: Bool) {
+        pageScrollView?.panGestureRecognizer.isEnabled = enabled
+        pageScrollView?.isDirectionalLockEnabled = !enabled
     }
 
     private func shareCurve(sourceView: UIView?) {

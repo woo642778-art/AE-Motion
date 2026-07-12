@@ -200,13 +200,18 @@ final class DeadFrameCleanerViewController: UIViewController {
         let photos = ExtensionUI.button("Choose from Photos", action: UIAction { [weak self] _ in self?.choose(photos: true) })
         let files = ExtensionUI.button("Choose from Files", action: UIAction { [weak self] _ in self?.choose(photos: false) })
         let analyze = ExtensionUI.button("Analyze Dead Frames", action: UIAction { [weak self] _ in self?.analyze() })
-        let export = ExtensionUI.button("Export Cleaned Video", action: UIAction { [weak self] action in
-            self?.export(source: action.sender as? UIView)
+        let export = ExtensionUI.secondaryButton("Export Cleaned Video", action: UIAction { [weak self] action in
+            self?.render(addToTimeline: false, source: action.sender as? UIView)
         })
+        let addToTimeline = ExtensionUI.button("Render & Open Add Layer", action: UIAction { [weak self] action in
+            self?.render(addToTimeline: true, source: action.sender as? UIView)
+        })
+        let renderActions = ExtensionUI.horizontalStack([export, addToTimeline])
 
         ExtensionUI.installScrollStack(ExtensionUI.stack([
             ExtensionUI.label("Automatic duplicate/dead-frame removal for clips that contain repeated frames."),
-            preview, photos, files, sourceLabel, fpsField, thresholdField, progress, analyze, export, status
+            preview, photos, files, sourceLabel, fpsField, thresholdField, progress, analyze, renderActions, status,
+            ExtensionUI.label("Render & Open Add Layer avoids the share sheet: it saves the result as the newest Photos video and opens Alight Motion's Add Layer flow.", style: .footnote)
         ]), in: self)
     }
 
@@ -256,7 +261,7 @@ final class DeadFrameCleanerViewController: UIViewController {
         }
     }
 
-    private func export(source: UIView?) {
+    private func render(addToTimeline: Bool, source: UIView?) {
         guard let sourceURL else {
             ExtensionUI.alert(title: "Choose a video", message: "Select a source video first.", from: self)
             return
@@ -268,7 +273,7 @@ final class DeadFrameCleanerViewController: UIViewController {
         let output = FileManager.default.temporaryDirectory
             .appendingPathComponent("AE-Motion-DeadFrames-Cleaned-\(UUID().uuidString).mov")
         let ranges = self.ranges
-        status.text = "Exporting cleaned video…"
+        status.text = addToTimeline ? "Rendering for timeline handoff…" : "Exporting cleaned video…"
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -279,8 +284,22 @@ final class DeadFrameCleanerViewController: UIViewController {
                         removeRanges: ranges
                     )
                 }.value
-                self.status.text = "Cleaned export complete."
-                ExtensionUI.share(fileURL: output, from: self, source: source)
+                if addToTimeline {
+                    self.status.text = "Rendered. Preparing Add Layer handoff…"
+                    TimelineHandoffCoordinator.renderResultReady(fileURL: output, from: self) { [weak self] result in
+                        guard let self else { return }
+                        switch result {
+                        case .success:
+                            self.status.text = "Saved as the newest Photos clip and opening Add Layer."
+                        case .failure(let error):
+                            self.status.text = "Rendered, but automatic handoff was incomplete."
+                            ExtensionUI.alert(title: "Timeline handoff", message: error.localizedDescription, from: self)
+                        }
+                    }
+                } else {
+                    self.status.text = "Cleaned export complete."
+                    ExtensionUI.share(fileURL: output, from: self, source: source)
+                }
             } catch {
                 self.status.text = "Export failed."
                 ExtensionUI.alert(title: "Export failed", message: error.localizedDescription, from: self)

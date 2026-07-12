@@ -24,7 +24,7 @@ struct EditableCurvePoint: Equatable, Identifiable {
 }
 
 @MainActor
-final class InteractiveCurveEditorView: UIView {
+final class InteractiveCurveEditorView: UIView, UIGestureRecognizerDelegate {
     enum DragTarget {
         case point(UUID)
         case incomingHandle(UUID)
@@ -41,10 +41,16 @@ final class InteractiveCurveEditorView: UIView {
     var minimumPointCount = 2
     var onChange: (([EditableCurvePoint]) -> Void)?
     var onSelectionChange: ((EditableCurvePoint?) -> Void)?
+    var onInteractionChanged: ((Bool) -> Void)?
 
     private(set) var points: [EditableCurvePoint] = []
     private(set) var selectedID: UUID?
     private var dragTarget: DragTarget?
+    private var pendingDragTarget: DragTarget?
+    private var isInteracting = false
+    private weak var linkedScrollView: UIScrollView?
+    private lazy var curvePanGesture = UIPanGestureRecognizer(target: self, action: #selector(handleCurvePan(_:)))
+    private lazy var doubleTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
     private let graphInset = UIEdgeInsets(top: 18, left: 24, bottom: 24, right: 18)
     private let hitRadius: CGFloat = 20
     private let handleScreenDistance: CGFloat = 48
@@ -56,10 +62,40 @@ final class InteractiveCurveEditorView: UIView {
         layer.cornerRadius = 14
         layer.masksToBounds = true
         isMultipleTouchEnabled = false
+        isExclusiveTouch = true
+        curvePanGesture.maximumNumberOfTouches = 1
+        curvePanGesture.cancelsTouchesInView = true
+        curvePanGesture.delegate = self
+        addGestureRecognizer(curvePanGesture)
+        doubleTapGesture.numberOfTapsRequired = 2
+        doubleTapGesture.cancelsTouchesInView = true
+        addGestureRecognizer(doubleTapGesture)
         accessibilityLabel = "Interactive curve editor"
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil {
+            dragTarget = nil
+            pendingDragTarget = nil
+            setInteracting(false)
+            linkedScrollView = nil
+            return
+        }
+        var ancestor = superview
+        while let view = ancestor {
+            if let scroll = view as? UIScrollView {
+                if linkedScrollView !== scroll {
+                    scroll.panGestureRecognizer.require(toFail: curvePanGesture)
+                    linkedScrollView = scroll
+                }
+                break
+            }
+            ancestor = view.superview
+        }
+    }
 
     func setPoints(_ newPoints: [EditableCurvePoint], notify: Bool = false) {
         points = normalized(newPoints)
@@ -122,40 +158,64 @@ final class InteractiveCurveEditorView: UIView {
         drawPointsAndHandles(context: context, rect: graphRect)
     }
 
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first else { return }
-        let location = touch.location(in: self)
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === curvePanGesture else { return true }
+        let location = gestureRecognizer.location(in: self)
         let graphRect = bounds.inset(by: graphInset)
-
-        if touch.tapCount >= 2, graphRect.contains(location) {
-            addPoint(at: dataPoint(from: location, in: graphRect))
-            return
+        guard graphRect.contains(location) else {
+            pendingDragTarget = nil
+            return false
         }
-
-        if let target = nearestHandle(to: location, in: graphRect) {
-            dragTarget = target
-            select(target)
-            return
+        if let handle = nearestHandle(to: location, in: graphRect) {
+            pendingDragTarget = handle
+            return true
         }
         if let id = nearestPointID(to: location, in: graphRect) {
-            selectedID = id
-            dragTarget = .point(id)
-            onSelectionChange?(selectedPoint())
-            setNeedsDisplay()
-        } else {
-            selectedID = nil
+            pendingDragTarget = .point(id)
+            return true
+        }
+        pendingDragTarget = nil
+        return false
+    }
+
+    @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .recognized else { return }
+        let location = gesture.location(in: self)
+        let graphRect = bounds.inset(by: graphInset)
+        guard graphRect.contains(location) else { return }
+        setInteracting(true)
+        addPoint(at: dataPoint(from: location, in: graphRect))
+        setInteracting(false)
+    }
+
+    @objc private func handleCurvePan(_ gesture: UIPanGestureRecognizer) {
+        let graphRect = bounds.inset(by: graphInset)
+        let location = gesture.location(in: self)
+        switch gesture.state {
+        case .began:
+            dragTarget = pendingDragTarget
+            pendingDragTarget = nil
+            guard let dragTarget else {
+                gesture.isEnabled = false
+                gesture.isEnabled = true
+                return
+            }
+            setInteracting(true)
+            select(dragTarget)
+        case .changed:
+            guard let dragTarget else { return }
+            update(dragTarget: dragTarget, at: location, in: graphRect)
+        case .ended, .cancelled, .failed:
             dragTarget = nil
-            onSelectionChange?(nil)
-            setNeedsDisplay()
+            pendingDragTarget = nil
+            setInteracting(false)
+        default:
+            break
         }
     }
 
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first, let dragTarget else { return }
-        let location = touch.location(in: self)
-        let graphRect = bounds.inset(by: graphInset)
+    private func update(dragTarget: DragTarget, at location: CGPoint, in graphRect: CGRect) {
         let data = dataPoint(from: location, in: graphRect)
-
         switch dragTarget {
         case .point(let id):
             guard let index = points.firstIndex(where: { $0.id == id }) else { return }
@@ -179,12 +239,10 @@ final class InteractiveCurveEditorView: UIView {
         }
     }
 
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        dragTarget = nil
-    }
-
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        dragTarget = nil
+    private func setInteracting(_ interacting: Bool) {
+        guard isInteracting != interacting else { return }
+        isInteracting = interacting
+        onInteractionChanged?(interacting)
     }
 
     private func normalized(_ input: [EditableCurvePoint]) -> [EditableCurvePoint] {

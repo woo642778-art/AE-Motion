@@ -67,10 +67,13 @@ enum ExtensionUI {
         return stack
     }
 
-    static func installScrollStack(_ stack: UIStackView, in controller: UIViewController) {
+    @discardableResult
+    static func installScrollStack(_ stack: UIStackView, in controller: UIViewController) -> UIScrollView {
         let scroll = UIScrollView()
         scroll.alwaysBounceVertical = true
         scroll.keyboardDismissMode = .interactive
+        scroll.delaysContentTouches = false
+        scroll.canCancelContentTouches = true
         scroll.translatesAutoresizingMaskIntoConstraints = false
         controller.view.addSubview(scroll)
         scroll.addSubview(stack)
@@ -85,6 +88,7 @@ enum ExtensionUI {
             stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -24),
             stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -40),
         ])
+        return scroll
     }
 
     static func share(text: String, from controller: UIViewController, source: UIView? = nil) {

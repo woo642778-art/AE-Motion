@@ -38,6 +38,7 @@ final class EasingCurveViewController: UIViewController {
     private let samples = ExtensionUI.field("Samples", value: "32")
     private let editor = InteractiveCurveEditorView()
     private let output = UITextView()
+    private weak var pageScrollView: UIScrollView?
     private var csv = ""
     private var isSyncing = false
 
@@ -55,6 +56,9 @@ final class EasingCurveViewController: UIViewController {
         editor.lockLastY = true
         editor.minimumPointCount = 2
         editor.onChange = { [weak self] _ in self?.generate() }
+        editor.onInteractionChanged = { [weak self] interacting in
+            self?.setPageScrollingEnabled(!interacting)
+        }
 
         output.isEditable = false
         output.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
@@ -68,8 +72,8 @@ final class EasingCurveViewController: UIViewController {
             ExtensionUI.share(text: self.csv, from: self, source: action.sender as? UIView)
         })
 
-        ExtensionUI.installScrollStack(ExtensionUI.stack([
-            ExtensionUI.label("Flow-style easing editor. Drag points and orange tangent handles. Double-tap the graph to add a point."),
+        pageScrollView = ExtensionUI.installScrollStack(ExtensionUI.stack([
+            ExtensionUI.label("Flow-style easing editor. Drag points and orange tangent handles. Page scrolling locks automatically while the graph is being edited. Double-tap the graph to add a point."),
             makePresetScroller(),
             editor,
             controls,
@@ -79,6 +83,11 @@ final class EasingCurveViewController: UIViewController {
             output,
         ]), in: self)
         applyPreset("Ease In-Out")
+    }
+
+    private func setPageScrollingEnabled(_ enabled: Bool) {
+        pageScrollView?.panGestureRecognizer.isEnabled = enabled
+        pageScrollView?.isDirectionalLockEnabled = !enabled
     }
 
     private func makePresetScroller() -> UIView {
