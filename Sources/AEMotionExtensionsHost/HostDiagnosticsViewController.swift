@@ -61,7 +61,7 @@ final class HostDiagnosticsViewController: UIViewController {
             output.text = report
             return
         }
-        defer { free(classes) }
+        defer { free(unsafeBitCast(classes, to: UnsafeMutableRawPointer.self)) }
 
         var matches: [AnyClass] = []
         for index in 0..<Int(count) {
