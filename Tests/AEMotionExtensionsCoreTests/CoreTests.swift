@@ -47,4 +47,40 @@ final class CoreTests: XCTestCase {
         let curve = try SpeedCurve.constant(duration: 2, velocity: 0, sourceOrigin: 1.25)
         XCTAssertEqual(curve.sourceTime(at: 1.8), 1.25, accuracy: 1e-9)
     }
+    func testRenderSizePolicyPreservesUnderLimitLandscape() {
+        XCTAssertEqual(
+            RenderSizePolicy.constrained(width: 1920, height: 1080),
+            RenderDimensions(width: 1920, height: 1080)
+        )
+    }
+
+    func testRenderSizePolicyCapsOversizedPortrait() {
+        let result = RenderSizePolicy.constrained(width: 4320, height: 7680)
+        XCTAssertLessThanOrEqual(max(result.width, result.height), 3840)
+        XCTAssertLessThanOrEqual(result.width * result.height, 8_294_400)
+        XCTAssertEqual(result.width % 2, 0)
+        XCTAssertEqual(result.height % 2, 0)
+    }
+
+    func testEffectSearchMetadataAddsBCCAliases() {
+        let tags = EffectSearchMetadata.normalizedTags(
+            name: "BCC Film Glow",
+            id: "com.alightcreative.effects.bccfilmglow",
+            existing: "film,glow"
+        ).split(separator: ",").map(String.init)
+        XCTAssertTrue(tags.contains("bcc"))
+        XCTAssertTrue(tags.contains("bbc"))
+        XCTAssertTrue(tags.contains("boris"))
+        XCTAssertTrue(tags.contains("borisfx"))
+        XCTAssertTrue(tags.contains("film"))
+        XCTAssertTrue(tags.contains("glow"))
+    }
+
+    func testEffectSearchMetadataNormalizesUnsupportedCategories() {
+        XCTAssertEqual(EffectSearchMetadata.normalizedCategory("lighting"), "drawing")
+        XCTAssertEqual(EffectSearchMetadata.normalizedCategory("stylize"), "procedural")
+        XCTAssertEqual(EffectSearchMetadata.normalizedCategory("distort"), "warp")
+        XCTAssertEqual(EffectSearchMetadata.normalizedCategory("blur"), "blur")
+    }
+
 }

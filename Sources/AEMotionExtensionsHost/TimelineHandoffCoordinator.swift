@@ -40,6 +40,7 @@ enum TimelineHandoffCoordinator {
                 completion(.failure(error))
 
             case .success:
+                RenderTemporaryFiles.remove(fileURL)
                 guard let controller else {
                     completion(.failure(.projectEditorNotFound))
                     return

@@ -20,16 +20,34 @@ import ObjectiveC.runtime
         guard let cls = categoryControllerClass(),
               let original = class_getInstanceMethod(
                   cls,
-                  #selector(UIViewController.viewDidAppear(_:))
+                  #selector(UIViewController.viewWillAppear(_:))
               ),
               let replacement = class_getInstanceMethod(
                   UIViewController.self,
-                  #selector(UIViewController.aemotion_viewDidAppear(_:))
+                  #selector(UIViewController.aemotion_viewWillAppear(_:))
               ) else {
             return false
         }
 
-        method_exchangeImplementations(original, replacement)
+        let originalSelector = #selector(UIViewController.viewWillAppear(_:))
+        let replacementSelector = #selector(UIViewController.aemotion_viewWillAppear(_:))
+        let added = class_addMethod(
+            cls,
+            originalSelector,
+            method_getImplementation(replacement),
+            method_getTypeEncoding(replacement)
+        )
+
+        if added {
+            class_replaceMethod(
+                cls,
+                replacementSelector,
+                method_getImplementation(original),
+                method_getTypeEncoding(original)
+            )
+        } else {
+            method_exchangeImplementations(original, replacement)
+        }
         return true
     }
 }
@@ -37,22 +55,24 @@ import ObjectiveC.runtime
 nonisolated(unsafe) private var proxyKey: UInt8 = 0
 
 extension UIViewController {
-    @objc fileprivate func aemotion_viewDidAppear(_ animated: Bool) {
+    @objc fileprivate func aemotion_viewWillAppear(_ animated: Bool) {
         // After swizzling this invokes EffectPickerMainVC's original implementation.
-        self.aemotion_viewDidAppear(animated)
+        self.aemotion_viewWillAppear(animated)
 
         guard String(describing: type(of: self)).contains("EffectPickerMainVC") else {
             return
         }
 
-        DispatchQueue.main.async { [weak self] in
-            self?.aemotion_installExtensionsCategoryIfNeeded()
-        }
+        // Prepare before the picker is visible so Extensions & Scripts does not pop
+        // into the list after the first frame. A few bounded retries cover builds that
+        // attach their collection-view outlets one run-loop turn later.
+        aemotion_prepareEffectPicker(attempt: 0)
     }
 
     /// Reads an Objective-C-visible property or backing ivar without KVC.
     /// `value(forKey:)` throws NSUnknownKeyException when an outlet name differs
-    /// between Alight Motion builds; that was the v1.5.3 Add Effects crash.
+    /// between Alight Motion builds, so every optional private outlet is resolved
+    /// through Objective-C runtime metadata instead.
     @MainActor
     private func aemotion_runtimeObject(named name: String) -> AnyObject? {
         let selector = NSSelectorFromString(name)
@@ -81,16 +101,59 @@ extension UIViewController {
     }
 
     @MainActor
-    private func aemotion_installExtensionsCategoryIfNeeded() {
-        guard objc_getAssociatedObject(self, &proxyKey) == nil else {
+    private func aemotion_prepareEffectPicker(attempt: Int) {
+        aemotion_hideRecommendationStripIfPresent()
+        let installed = aemotion_installExtensionsCategoryIfNeeded()
+        if installed {
             aemotion_resizeCategoryCollectionIfNeeded()
             return
         }
 
+        guard attempt < 4 else { return }
+        let delay = 0.01 * Double(attempt + 1)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.aemotion_prepareEffectPicker(attempt: attempt + 1)
+        }
+    }
+
+    /// Hides only the two known recommendation-carousel outlets. No view-tree
+    /// heuristics are used, so unrelated Alight Motion collection views are untouched.
+    @MainActor
+    private func aemotion_hideRecommendationStripIfPresent() {
+        if let recommendation = aemotion_runtimeObject(
+            named: "recommendCollectionView"
+        ) as? UICollectionView {
+            recommendation.isHidden = true
+            recommendation.alpha = 0
+            recommendation.isUserInteractionEnabled = false
+        }
+
+        if let height = aemotion_runtimeObject(
+            named: "recommendCollectionViewHeightConst"
+        ) as? NSLayoutConstraint,
+           abs(height.constant) > 0.5 {
+            height.constant = 0
+            UIView.performWithoutAnimation {
+                view.setNeedsLayout()
+                view.layoutIfNeeded()
+            }
+        }
+    }
+
+    @MainActor
+    @discardableResult
+    private func aemotion_installExtensionsCategoryIfNeeded() -> Bool {
+        if objc_getAssociatedObject(self, &proxyKey) != nil {
+            return true
+        }
+
         guard let collection = aemotion_categoryCollection(),
-              let dataSource = collection.dataSource,
-              !(dataSource is CategoryCollectionProxy) else {
-            return
+              let dataSource = collection.dataSource else {
+            return false
+        }
+
+        if dataSource is CategoryCollectionProxy {
+            return true
         }
 
         let proxy = CategoryCollectionProxy(
@@ -111,10 +174,7 @@ extension UIViewController {
         collection.delegate = proxy
         collection.reloadData()
         collection.collectionViewLayout.invalidateLayout()
-
-        DispatchQueue.main.async { [weak self] in
-            self?.aemotion_resizeCategoryCollectionIfNeeded()
-        }
+        return true
     }
 
     @MainActor

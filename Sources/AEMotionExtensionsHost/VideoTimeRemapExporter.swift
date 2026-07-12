@@ -53,17 +53,19 @@ final class VideoTimeRemapExporter: @unchecked Sendable {
         outputURL: URL,
         curve: SpeedCurve,
         options: VideoTimeRemapExportOptions,
+        cancellationToken: RenderCancellationToken? = nil,
         progress: @escaping @Sendable (Double) -> Void
     ) throws {
-        let temporaryVideo = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AE-Motion-Retimed-Video-\(UUID().uuidString).mov")
+        try cancellationToken?.checkCancellation()
+        let temporaryVideo = RenderTemporaryFiles.makeURL(label: "Retimed-Video")
         defer { try? FileManager.default.removeItem(at: temporaryVideo) }
 
         try renderVideoOnly(
             inputURL: inputURL,
             outputURL: temporaryVideo,
             curve: curve,
-            options: options
+            options: options,
+            cancellationToken: cancellationToken
         ) { value in
             progress(value * (options.includeAudio ? 0.82 : 1.0))
         }
@@ -80,7 +82,8 @@ final class VideoTimeRemapExporter: @unchecked Sendable {
             renderedVideoURL: temporaryVideo,
             outputURL: outputURL,
             curve: curve,
-            options: options
+            options: options,
+            cancellationToken: cancellationToken
         )
         progress(1)
     }
@@ -90,8 +93,10 @@ final class VideoTimeRemapExporter: @unchecked Sendable {
         outputURL: URL,
         curve: SpeedCurve,
         options: VideoTimeRemapExportOptions,
+        cancellationToken: RenderCancellationToken?,
         progress: @escaping @Sendable (Double) -> Void
     ) throws {
+        try cancellationToken?.checkCancellation()
         let samples = try SpeedFrameSamplePlanner.plan(
             curve: curve,
             outputDuration: options.outputDuration,
@@ -102,11 +107,14 @@ final class VideoTimeRemapExporter: @unchecked Sendable {
             throw VideoTimeRemapExportError.noVideoTrack
         }
         let transformed = track.naturalSize.applying(track.preferredTransform)
-        let width = Int(abs(transformed.width).rounded())
-        let height = Int(abs(transformed.height).rounded())
-        guard width > 0, height > 0 else {
+        let sourceWidth = Int(abs(transformed.width).rounded())
+        let sourceHeight = Int(abs(transformed.height).rounded())
+        guard sourceWidth > 0, sourceHeight > 0 else {
             throw VideoTimeRemapExportError.invalidDimensions
         }
+        let dimensions = RenderSizePolicy.constrained(width: sourceWidth, height: sourceHeight)
+        let width = dimensions.width
+        let height = dimensions.height
         let sourceDuration = asset.duration.seconds
 
         try? FileManager.default.removeItem(at: outputURL)
@@ -142,11 +150,14 @@ final class VideoTimeRemapExporter: @unchecked Sendable {
 
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: width, height: height)
         generator.requestedTimeToleranceBefore = CMTime(seconds: 1.0 / max(1, options.frameRate), preferredTimescale: 600)
         generator.requestedTimeToleranceAfter = generator.requestedTimeToleranceBefore
 
         for (index, sample) in samples.enumerated() {
+            try cancellationToken?.checkCancellation()
             while !input.isReadyForMoreMediaData {
+                try cancellationToken?.checkCancellation()
                 Thread.sleep(forTimeInterval: 0.002)
             }
             let clamped = min(max(sample.sourceTime, 0), max(0, sourceDuration))
@@ -166,8 +177,14 @@ final class VideoTimeRemapExporter: @unchecked Sendable {
                   let buffer = optionalBuffer else {
                 throw VideoTimeRemapExportError.cannotCreatePixelBuffer
             }
+            let sourceImage = CIImage(cgImage: image)
+            let scaleX = CGFloat(width) / max(1, sourceImage.extent.width)
+            let scaleY = CGFloat(height) / max(1, sourceImage.extent.height)
+            let renderedImage = sourceImage
+                .transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+                .cropped(to: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
             context.render(
-                CIImage(cgImage: image),
+                renderedImage,
                 to: buffer,
                 bounds: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)),
                 colorSpace: CGColorSpaceCreateDeviceRGB()
@@ -182,7 +199,14 @@ final class VideoTimeRemapExporter: @unchecked Sendable {
         input.markAsFinished()
         let semaphore = DispatchSemaphore(value: 0)
         writer.finishWriting { semaphore.signal() }
-        semaphore.wait()
+        while semaphore.wait(timeout: .now() + 0.1) == .timedOut {
+            do {
+                try cancellationToken?.checkCancellation()
+            } catch {
+                writer.cancelWriting()
+                throw error
+            }
+        }
         guard writer.status == .completed else {
             throw VideoTimeRemapExportError.writerFailed(
                 writer.error?.localizedDescription ?? "finishWriting failed"
@@ -195,8 +219,10 @@ final class VideoTimeRemapExporter: @unchecked Sendable {
         renderedVideoURL: URL,
         outputURL: URL,
         curve: SpeedCurve,
-        options: VideoTimeRemapExportOptions
+        options: VideoTimeRemapExportOptions,
+        cancellationToken: RenderCancellationToken?
     ) throws {
+        try cancellationToken?.checkCancellation()
         let sourceAsset = AVURLAsset(url: sourceURL)
         guard let sourceAudio = sourceAsset.tracks(withMediaType: .audio).first else {
             try? FileManager.default.removeItem(at: outputURL)
@@ -236,6 +262,7 @@ final class VideoTimeRemapExporter: @unchecked Sendable {
         var destinationCursor = CMTime.zero
 
         for index in 0..<segmentCount {
+            try cancellationToken?.checkCancellation()
             let outputStart = options.outputDuration * Double(index) / Double(segmentCount)
             let outputEnd = options.outputDuration * Double(index + 1) / Double(segmentCount)
             let outputSegmentDuration = outputEnd - outputStart
@@ -278,7 +305,14 @@ final class VideoTimeRemapExporter: @unchecked Sendable {
 
         let semaphore = DispatchSemaphore(value: 0)
         session.exportAsynchronously { semaphore.signal() }
-        semaphore.wait()
+        while semaphore.wait(timeout: .now() + 0.1) == .timedOut {
+            do {
+                try cancellationToken?.checkCancellation()
+            } catch {
+                session.cancelExport()
+                throw error
+            }
+        }
         guard session.status == .completed else {
             throw VideoTimeRemapExportError.exportFailed(
                 session.error?.localizedDescription ?? "Final audio/video export failed."

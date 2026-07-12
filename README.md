@@ -38,3 +38,14 @@ paths back to the original model for display, selection, highlight, deselection,
 and focus callbacks. The synthetic Extensions cell is never forwarded. Unknown
 optional/private item-index-path callbacks are not advertised to UIKit, avoiding
 untranslated shifted paths.
+
+## Normalize custom effect search metadata
+
+Before repacking an IPA, normalize the installed effect XML files so custom BCC effects use an indexed category and can be found through `BCC`, the common `BBC` typo, `Boris`, `BorisFX`, or `Continuum`:
+
+```bash
+python3 scripts/normalize-effect-search-metadata.py \
+  /path/to/Payload/AlightMotion.app
+```
+
+The normalizer edits only the opening `<effect>` attributes and preserves the effect body, parameters, shaders, and resource references.

@@ -4,6 +4,7 @@ import AVFoundation
 import Vision
 import CoreImage
 import CoreGraphics
+import AEMotionExtensionsCore
 
 struct DepthMapOptions: Sendable {
     var quality: Int
@@ -11,6 +12,18 @@ struct DepthMapOptions: Sendable {
     var foregroundAssist: Bool
     var detail: Double
     var temporalSmoothing: Double
+}
+
+struct DepthPreviewPayload: Sendable {
+    var pngData: Data
+    var diagnostics: String
+}
+
+private struct DepthMapComputation {
+    var image: CIImage
+    var usedSaliency: Bool
+    var usedPersonAssist: Bool
+    var usedFallback: Bool
 }
 
 enum DepthMapError: Error, LocalizedError, Sendable {
@@ -39,16 +52,32 @@ final class DepthMapExporter: @unchecked Sendable {
         time: Double,
         options: DepthMapOptions
     ) throws -> Data {
+        try previewPayload(url: url, time: time, options: options).pngData
+    }
+
+    func previewPayload(
+        url: URL,
+        time: Double,
+        options: DepthMapOptions
+    ) throws -> DepthPreviewPayload {
         let asset = AVURLAsset(url: url)
+        guard asset.tracks(withMediaType: .video).first != nil else {
+            throw DepthMapError.noVideo
+        }
+
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = CMTime(seconds: 1.0 / 30.0, preferredTimescale: 600)
+        generator.requestedTimeToleranceAfter = generator.requestedTimeToleranceBefore
+        generator.maximumSize = CGSize(width: 1_920, height: 1_920)
+
+        let requested = CMTime(seconds: max(0, time), preferredTimescale: 600)
         var actual = CMTime.invalid
-        let image = try generator.copyCGImage(
-            at: CMTime(seconds: max(0, time), preferredTimescale: 600),
-            actualTime: &actual
-        )
+        let image = try generator.copyCGImage(at: requested, actualTime: &actual)
         let input = CIImage(cgImage: image)
-        let depth = try relativeDepth(for: input, options: options, previous: nil)
+        let computation = try relativeDepthDetailed(for: input, options: options, previous: nil)
+        let depth = computation.image.cropped(to: input.extent)
+
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
               let data = context.pngRepresentation(
                 of: depth,
@@ -58,15 +87,28 @@ final class DepthMapExporter: @unchecked Sendable {
               ) else {
             throw DepthMapError.noDepthResult
         }
-        return data
+
+        let actualSeconds = actual.isValid ? actual.seconds : requested.seconds
+        let diagnostics = [
+            "Requested time: \(String(format: "%.3f", requested.seconds)) s",
+            "Actual frame time: \(String(format: "%.3f", actualSeconds)) s",
+            "Frame: \(image.width) x \(image.height)",
+            "Vision saliency: \(computation.usedSaliency ? "used" : "unavailable")",
+            "Person assist: \(computation.usedPersonAssist ? "used" : "not used")",
+            "Fallback depth: \(computation.usedFallback ? "used" : "not used")",
+        ].joined(separator: " | ")
+
+        return DepthPreviewPayload(pngData: data, diagnostics: diagnostics)
     }
 
     func export(
         inputURL: URL,
         outputURL: URL,
         options: DepthMapOptions,
+        cancellationToken: RenderCancellationToken? = nil,
         progress: @escaping @Sendable (Double) -> Void
     ) throws {
+        try cancellationToken?.checkCancellation()
         let asset = AVURLAsset(url: inputURL)
         guard let track = asset.tracks(withMediaType: .video).first else {
             throw DepthMapError.noVideo
@@ -74,9 +116,18 @@ final class DepthMapExporter: @unchecked Sendable {
 
         let naturalRect = CGRect(origin: .zero, size: track.naturalSize)
         let transformedRect = naturalRect.applying(track.preferredTransform).standardized
-        let renderSize = CGSize(
+        let sourceRenderSize = CGSize(
             width: max(1, transformedRect.width.rounded()),
             height: max(1, transformedRect.height.rounded())
+        )
+        let dimensions = RenderSizePolicy.constrained(
+            width: Int(sourceRenderSize.width),
+            height: Int(sourceRenderSize.height)
+        )
+        let renderSize = CGSize(width: dimensions.width, height: dimensions.height)
+        let outputScale = CGAffineTransform(
+            scaleX: renderSize.width / max(1, sourceRenderSize.width),
+            y: renderSize.height / max(1, sourceRenderSize.height)
         )
         let translation = CGAffineTransform(
             translationX: -transformedRect.minX,
@@ -140,6 +191,12 @@ final class DepthMapExporter: @unchecked Sendable {
         var processingError: Error?
 
         while processingError == nil, let sample = output.copyNextSampleBuffer() {
+            do {
+                try cancellationToken?.checkCancellation()
+            } catch {
+                processingError = error
+                break
+            }
             autoreleasepool {
                 guard let sourceBuffer = CMSampleBufferGetImageBuffer(sample),
                       let pool = adaptor.pixelBufferPool else {
@@ -150,13 +207,15 @@ final class DepthMapExporter: @unchecked Sendable {
                 let source = CIImage(cvPixelBuffer: sourceBuffer)
                     .transformed(by: track.preferredTransform)
                     .transformed(by: translation)
+                    .cropped(to: CGRect(origin: .zero, size: sourceRenderSize))
+                    .transformed(by: outputScale)
                     .cropped(to: CGRect(origin: .zero, size: renderSize))
                 do {
-                    let depth = try relativeDepth(
+                    let depth = try relativeDepthDetailed(
                         for: source,
                         options: options,
                         previous: previousDepth
-                    ).cropped(to: source.extent)
+                    ).image.cropped(to: source.extent)
                     previousDepth = depth
 
                     var buffer: CVPixelBuffer?
@@ -171,6 +230,7 @@ final class DepthMapExporter: @unchecked Sendable {
                         colorSpace: CGColorSpaceCreateDeviceRGB()
                     )
                     while !writerInput.isReadyForMoreMediaData {
+                        try cancellationToken?.checkCancellation()
                         Thread.sleep(forTimeInterval: 0.002)
                     }
                     guard adaptor.append(buffer, withPresentationTime: pts) else {
@@ -194,7 +254,14 @@ final class DepthMapExporter: @unchecked Sendable {
         writerInput.markAsFinished()
         let semaphore = DispatchSemaphore(value: 0)
         writer.finishWriting { semaphore.signal() }
-        semaphore.wait()
+        while semaphore.wait(timeout: .now() + 0.1) == .timedOut {
+            do {
+                try cancellationToken?.checkCancellation()
+            } catch {
+                writer.cancelWriting()
+                throw error
+            }
+        }
         guard writer.status == .completed else {
             throw DepthMapError.writerFailed(
                 writer.error?.localizedDescription ?? "Depth-map export failed."
@@ -203,14 +270,21 @@ final class DepthMapExporter: @unchecked Sendable {
         progress(1)
     }
 
-    private func relativeDepth(
+    private func relativeDepthDetailed(
         for input: CIImage,
         options: DepthMapOptions,
         previous: CIImage?
-    ) throws -> CIImage {
+    ) throws -> DepthMapComputation {
         let extent = input.extent
-        let saliency = try saliencyMask(for: input)
-        var depth = intensity(saliency, weight: 0.78)
+        let saliency: CIImage?
+        do {
+            saliency = try saliencyMask(for: input)
+        } catch {
+            saliency = nil
+        }
+
+        let usedFallback = saliency == nil
+        var depth = intensity(saliency ?? fallbackDepth(for: input), weight: 0.78)
 
         let vertical = CIFilter(
             name: "CILinearGradient",
@@ -224,9 +298,11 @@ final class DepthMapExporter: @unchecked Sendable {
             ?? CIImage(color: .black).cropped(to: extent)
         depth = add(depth, intensity(vertical, weight: 0.22), extent: extent)
 
+        var usedPersonAssist = false
         if options.foregroundAssist,
            let person = try? personMask(for: input, quality: options.quality) {
             depth = maximum(depth, intensity(person, weight: 0.96), extent: extent)
+            usedPersonAssist = true
         }
 
         let contrast = 0.7 + min(max(options.detail, 0), 1) * 1.9
@@ -256,7 +332,33 @@ final class DepthMapExporter: @unchecked Sendable {
         if options.invert {
             depth = depth.applyingFilter("CIColorInvert").cropped(to: extent)
         }
-        return depth
+        return DepthMapComputation(
+            image: depth,
+            usedSaliency: saliency != nil,
+            usedPersonAssist: usedPersonAssist,
+            usedFallback: usedFallback
+        )
+    }
+
+    private func fallbackDepth(for input: CIImage) -> CIImage {
+        let extent = input.extent
+        let monochrome = input
+            .applyingFilter("CIPhotoEffectMono")
+            .applyingFilter("CIColorControls", parameters: [
+                kCIInputContrastKey: 1.25,
+                kCIInputBrightnessKey: 0.02,
+            ])
+            .cropped(to: extent)
+        let edges = input
+            .applyingFilter("CIEdges", parameters: [kCIInputIntensityKey: 2.2])
+            .clampedToExtent()
+            .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 6.0])
+            .cropped(to: extent)
+        return add(
+            intensity(monochrome, weight: 0.55),
+            intensity(edges, weight: 0.45),
+            extent: extent
+        )
     }
 
     private func saliencyMask(for image: CIImage) throws -> CIImage {
@@ -329,8 +431,17 @@ final class DepthMapStudioViewController: UIViewController {
     private let smoothingSlider = UISlider()
     private let progress = UIProgressView(progressViewStyle: .default)
     private let status = ExtensionUI.label("Relative depth uses on-device Vision saliency and foreground cues.")
+    private let previewSpinner = UIActivityIndicatorView(style: .medium)
+    private let previewButton = ExtensionUI.button("Preview Depth at Playhead", action: UIAction { _ in })
+    private let exportButton = ExtensionUI.secondaryButton("Export Depth Map", action: UIAction { _ in })
+    private let timelineButton = ExtensionUI.button("Render & Return to Timeline", action: UIAction { _ in })
+    private let cancelButton = ExtensionUI.secondaryButton("Cancel Render", action: UIAction { _ in })
+    private let diagnosticsButton = ExtensionUI.secondaryButton("Share Diagnostics", action: UIAction { _ in })
+    private let diagnostics = ExtensionDiagnosticsLog(component: "Depth Map Studio")
     private var sourceURL: URL?
     private var picker: MediaSourcePicker?
+    private var previewTask: Task<Void, Never>?
+    private lazy var renderJob = RenderJobCoordinator(owner: self, progressView: progress, statusLabel: status)
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -345,6 +456,21 @@ final class DepthMapStudioViewController: UIViewController {
         smoothingSlider.minimumValue = 0
         smoothingSlider.maximumValue = 0.9
         smoothingSlider.value = 0.45
+        previewSpinner.hidesWhenStopped = true
+        cancelButton.isEnabled = false
+
+        previewButton.addAction(UIAction { [weak self] _ in self?.previewDepth() }, for: .touchUpInside)
+        exportButton.addAction(UIAction { [weak self] action in
+            self?.render(returnToTimeline: false, source: action.sender as? UIView)
+        }, for: .touchUpInside)
+        timelineButton.addAction(UIAction { [weak self] action in
+            self?.render(returnToTimeline: true, source: action.sender as? UIView)
+        }, for: .touchUpInside)
+        cancelButton.addAction(UIAction { [weak self] _ in self?.renderJob.cancel() }, for: .touchUpInside)
+        diagnosticsButton.addAction(UIAction { [weak self] action in
+            guard let self else { return }
+            ExtensionUI.share(text: self.diagnostics.text, from: self, source: action.sender as? UIView)
+        }, for: .touchUpInside)
 
         depthPreview.translatesAutoresizingMaskIntoConstraints = false
         depthPreview.contentMode = .scaleAspectFit
@@ -356,13 +482,10 @@ final class DepthMapStudioViewController: UIViewController {
         let photos = ExtensionUI.button("Choose from Photos", action: UIAction { [weak self] _ in self?.choose(photos: true) })
         let files = ExtensionUI.secondaryButton("Choose from Files", action: UIAction { [weak self] _ in self?.choose(photos: false) })
         let pickerRow = ExtensionUI.horizontalStack([photos, files])
-        let previewButton = ExtensionUI.button("Preview Depth at Playhead", action: UIAction { [weak self] _ in self?.previewDepth() })
-        let export = ExtensionUI.secondaryButton("Export Depth Map", action: UIAction { [weak self] action in
-            self?.render(returnToTimeline: false, source: action.sender as? UIView)
-        })
-        let timeline = ExtensionUI.button("Render & Return to Timeline", action: UIAction { [weak self] action in
-            self?.render(returnToTimeline: true, source: action.sender as? UIView)
-        })
+        let previewRow = ExtensionUI.horizontalStack([previewButton, previewSpinner])
+        previewRow.distribution = .fill
+        previewButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        previewSpinner.setContentHuggingPriority(.required, for: .horizontal)
 
         let stack = ExtensionUI.stack([
             ExtensionUI.label("Generates a grayscale relative-depth video automatically. White represents near regions by default. This is a lightweight system-only estimate, not a metric camera depth scan."),
@@ -376,14 +499,16 @@ final class DepthMapStudioViewController: UIViewController {
             detailSlider,
             ExtensionUI.label("Temporal smoothing", style: .footnote),
             smoothingSlider,
-            previewButton,
+            previewRow,
             depthPreview,
             progress,
-            ExtensionUI.horizontalStack([export, timeline]),
+            ExtensionUI.horizontalStack([exportButton, timelineButton]),
+            ExtensionUI.horizontalStack([cancelButton, diagnosticsButton]),
             status,
             ExtensionUI.label("Render & Return to Timeline saves the map as the newest Photos video and safely returns to the project. Tap Add Layer once to choose the newest video.", style: .footnote),
         ])
         _ = ExtensionUI.installScrollStack(stack, in: self)
+        diagnostics.append("Depth Map Studio opened.")
     }
 
     private func choose(photos: Bool) {
@@ -395,7 +520,9 @@ final class DepthMapStudioViewController: UIViewController {
                 self.preview.load(url: url)
                 self.sourceLabel.text = url.lastPathComponent
                 self.status.text = "Ready. Preview a frame or render the complete depth map."
+                self.diagnostics.append("Source selected: \(url.lastPathComponent)")
             case .failure(let error):
+                self.diagnostics.append("Import failed: \(error.localizedDescription)")
                 ExtensionUI.alert(title: "Import failed", message: error.localizedDescription, from: self)
             }
         }
@@ -414,23 +541,42 @@ final class DepthMapStudioViewController: UIViewController {
     }
 
     private func previewDepth() {
+        guard previewTask == nil else {
+            status.text = "A depth preview is already running."
+            return
+        }
         guard let sourceURL else {
             ExtensionUI.alert(title: "Choose a video", message: "Select a source video first.", from: self)
             return
         }
+
         let time = preview.currentTime
         let options = currentOptions()
+        diagnostics.append("Preview requested at \(String(format: "%.3f", time)) s.")
         status.text = "Estimating relative depth…"
-        Task { @MainActor [weak self] in
+        previewButton.isEnabled = false
+        previewSpinner.startAnimating()
+
+        previewTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            defer {
+                self.previewTask = nil
+                self.previewButton.isEnabled = true
+                self.previewSpinner.stopAnimating()
+            }
             do {
-                let data = try await Task.detached(priority: .userInitiated) {
-                    try DepthMapExporter().previewPNGData(url: sourceURL, time: time, options: options)
+                let payload = try await Task.detached(priority: .userInitiated) {
+                    try DepthMapExporter().previewPayload(url: sourceURL, time: time, options: options)
                 }.value
-                self.depthPreview.image = UIImage(data: data)
-                self.status.text = "Depth preview complete."
+                guard let image = UIImage(data: payload.pngData) else {
+                    throw DepthMapError.noDepthResult
+                }
+                self.depthPreview.image = image
+                self.status.text = "Depth preview complete. \(payload.diagnostics)"
+                self.diagnostics.append("Preview complete: \(payload.diagnostics)")
             } catch {
-                self.status.text = "Depth preview failed."
+                self.status.text = "Depth preview failed: \(error.localizedDescription)"
+                self.diagnostics.append("Preview failed: \(error.localizedDescription)")
                 ExtensionUI.alert(title: "Depth preview failed", message: error.localizedDescription, from: self)
             }
         }
@@ -442,46 +588,60 @@ final class DepthMapStudioViewController: UIViewController {
             return
         }
         let options = currentOptions()
-        let output = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AE-Motion-Depth-\(UUID().uuidString).mov")
-        progress.progress = 0
-        status.text = "Rendering relative depth map…"
+        let output = RenderTemporaryFiles.makeURL(label: "Depth")
+        let controls: [UIControl] = [quality, invertSwitch, foregroundSwitch, detailSlider, smoothingSlider, previewButton, exportButton, timelineButton]
+        diagnostics.append("Render started. Return to timeline: \(returnToTimeline)")
 
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await Task.detached(priority: .userInitiated) {
-                    try DepthMapExporter().export(
-                        inputURL: sourceURL,
-                        outputURL: output,
-                        options: options
-                    ) { value in
-                        Task { @MainActor [weak self] in
-                            self?.progress.progress = Float(value)
+        renderJob.start(
+            name: "Depth Map",
+            outputURL: output,
+            controls: controls,
+            cancelButton: cancelButton,
+            initialStatus: "Rendering relative depth map…",
+            operation: { token, progress in
+                try DepthMapExporter().export(
+                    inputURL: sourceURL,
+                    outputURL: output,
+                    options: options,
+                    cancellationToken: token,
+                    progress: progress
+                )
+            },
+            completion: { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success:
+                    self.diagnostics.append("Render completed: \(output.lastPathComponent)")
+                    if returnToTimeline {
+                        self.status.text = "Rendered. Saving and returning to timeline…"
+                        TimelineHandoffCoordinator.renderResultReady(fileURL: output, from: self) { [weak self] handoff in
+                            guard let self else { return }
+                            switch handoff {
+                            case .success:
+                                self.renderJob.outputWasConsumed(output)
+                                self.status.text = "Depth map saved as the newest Photos video."
+                                self.diagnostics.append("Photos handoff completed.")
+                            case .failure(let error):
+                                self.status.text = "Depth map rendered, but timeline return was incomplete."
+                                self.diagnostics.append("Photos handoff failed: \(error.localizedDescription)")
+                                ExtensionUI.alert(title: "Depth map handoff", message: error.localizedDescription, from: self)
+                            }
                         }
+                    } else {
+                        self.status.text = "Depth-map export complete."
+                        ExtensionUI.share(fileURL: output, from: self, source: source)
                     }
-                }.value
-                if returnToTimeline {
-                    self.status.text = "Rendered. Saving and returning to timeline…"
-                    TimelineHandoffCoordinator.renderResultReady(fileURL: output, from: self) { [weak self] result in
-                        guard let self else { return }
-                        switch result {
-                        case .success:
-                            self.status.text = "Depth map saved as the newest Photos video."
-                        case .failure(let error):
-                            self.status.text = "Depth map rendered, but timeline return was incomplete."
-                            ExtensionUI.alert(title: "Depth map handoff", message: error.localizedDescription, from: self)
-                        }
-                    }
-                } else {
-                    self.status.text = "Depth-map export complete."
-                    ExtensionUI.share(fileURL: output, from: self, source: source)
+                case .failure(.cancelled):
+                    self.status.text = "Depth-map render cancelled."
+                    self.diagnostics.append("Render cancelled by user.")
+                case .failure(let error):
+                    self.status.text = "Depth-map render failed: \(error.localizedDescription)"
+                    self.diagnostics.append("Render failed: \(error.localizedDescription)")
+                    ExtensionUI.alert(title: "Depth-map render failed", message: error.localizedDescription, from: self)
                 }
-            } catch {
-                self.status.text = "Depth-map render failed."
-                ExtensionUI.alert(title: "Depth-map render failed", message: error.localizedDescription, from: self)
             }
-        }
+        )
     }
 }
+
 #endif

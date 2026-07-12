@@ -16,7 +16,11 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
     private let status = ExtensionUI.label("1× normal · 0 freeze · negative reverse")
     private let includeAudioSwitch = UISwitch()
     private let preservePitchSwitch = UISwitch()
+    private let exportButton = ExtensionUI.secondaryButton("Export Retimed Video", action: UIAction { _ in })
+    private let timelineButton = ExtensionUI.button("Render & Return to Timeline", action: UIAction { _ in })
+    private let cancelRenderButton = ExtensionUI.secondaryButton("Cancel Render", action: UIAction { _ in })
     private weak var pageScrollView: UIScrollView?
+    private lazy var renderJob = RenderJobCoordinator(owner: self, progressView: progress, statusLabel: status)
 
     private var picker: MediaSourcePicker?
     private var sourceURL: URL?
@@ -71,13 +75,15 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
         })
         let editRow = ExtensionUI.horizontalStack([add, delete])
 
-        let export = ExtensionUI.secondaryButton("Export Retimed Video", action: UIAction { [weak self] action in
+        exportButton.addAction(UIAction { [weak self] action in
             self?.renderVideo(addToTimeline: false, sourceView: action.sender as? UIView)
-        })
-        let addToTimeline = ExtensionUI.button("Render & Return to Timeline", action: UIAction { [weak self] action in
+        }, for: .touchUpInside)
+        timelineButton.addAction(UIAction { [weak self] action in
             self?.renderVideo(addToTimeline: true, sourceView: action.sender as? UIView)
-        })
-        let renderActions = ExtensionUI.horizontalStack([export, addToTimeline])
+        }, for: .touchUpInside)
+        cancelRenderButton.isEnabled = false
+        cancelRenderButton.addAction(UIAction { [weak self] _ in self?.renderJob.cancel() }, for: .touchUpInside)
+        let renderActions = ExtensionUI.horizontalStack([exportButton, timelineButton])
         let shareCurve = ExtensionUI.secondaryButton("Share Speed Curve JSON", action: UIAction { [weak self] action in
             self?.shareCurve(sourceView: action.sender as? UIView)
         })
@@ -98,6 +104,7 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
             status,
             progress,
             renderActions,
+            cancelRenderButton,
             shareCurve,
             ExtensionUI.label("Curve editing locks page scrolling while a point or tangent is dragged. Render & Return to Timeline saves the result as the newest Photos clip and returns safely to the open project timeline. Forward audio segments use spectral pitch preservation; freeze and reverse sections remain silent.", style: .footnote),
         ]), in: self)
@@ -300,51 +307,62 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
             ExtensionUI.alert(title: "Invalid curve", message: error.localizedDescription, from: self)
             return
         }
-        let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AE-Motion-Speed-\(UUID().uuidString).mov")
+        let outputURL = RenderTemporaryFiles.makeURL(label: "Speed")
         let options = VideoTimeRemapExportOptions(
             outputDuration: curve.outputDuration,
             frameRate: fps,
             includeAudio: includeAudioSwitch.isOn,
             preservePitch: preservePitchSwitch.isOn
         )
-        progress.progress = 0
-        status.text = addToTimeline ? "Rendering for timeline handoff…" : "Exporting retimed video…"
+        let controls: [UIControl] = [
+            fpsField, includeAudioSwitch, preservePitchSwitch, exportButton, timelineButton
+        ]
 
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await Task.detached(priority: .userInitiated) {
-                    try VideoTimeRemapExporter().export(
-                        inputURL: sourceURL,
-                        outputURL: outputURL,
-                        curve: curve,
-                        options: options
-                    ) { value in
-                        Task { @MainActor [weak self] in self?.progress.progress = Float(value) }
-                    }
-                }.value
-                if addToTimeline {
-                    self.status.text = "Rendered. Saving and returning to timeline…"
-                    TimelineHandoffCoordinator.renderResultReady(fileURL: outputURL, from: self) { [weak self] result in
-                        guard let self else { return }
-                        switch result {
-                        case .success:
-                            self.status.text = "Saved as the newest Photos clip and returning to the timeline."
-                        case .failure(let error):
-                            self.status.text = "Rendered, but the safe timeline return was incomplete."
-                            ExtensionUI.alert(title: "Timeline handoff", message: error.localizedDescription, from: self)
+        renderJob.start(
+            name: "Speed Remap",
+            outputURL: outputURL,
+            controls: controls,
+            cancelButton: cancelRenderButton,
+            initialStatus: addToTimeline ? "Rendering for timeline handoff…" : "Exporting retimed video…",
+            operation: { token, progress in
+                try VideoTimeRemapExporter().export(
+                    inputURL: sourceURL,
+                    outputURL: outputURL,
+                    curve: curve,
+                    options: options,
+                    cancellationToken: token,
+                    progress: progress
+                )
+            },
+            completion: { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success:
+                    if addToTimeline {
+                        self.status.text = "Rendered. Saving and returning to timeline…"
+                        TimelineHandoffCoordinator.renderResultReady(fileURL: outputURL, from: self) { [weak self] handoff in
+                            guard let self else { return }
+                            switch handoff {
+                            case .success:
+                                self.renderJob.outputWasConsumed(outputURL)
+                                self.status.text = "Saved as the newest Photos clip and returning to the timeline."
+                            case .failure(let error):
+                                self.status.text = "Rendered, but the safe timeline return was incomplete."
+                                ExtensionUI.alert(title: "Timeline handoff", message: error.localizedDescription, from: self)
+                            }
                         }
+                    } else {
+                        self.status.text = "Export complete."
+                        ExtensionUI.share(fileURL: outputURL, from: self, source: sourceView)
                     }
-                } else {
-                    self.status.text = "Export complete."
-                    ExtensionUI.share(fileURL: outputURL, from: self, source: sourceView)
+                case .failure(.cancelled):
+                    self.status.text = "Speed-remap render cancelled."
+                case .failure(let error):
+                    self.status.text = "Export failed: \(error.localizedDescription)"
+                    ExtensionUI.alert(title: "Export failed", message: error.localizedDescription, from: self)
                 }
-            } catch {
-                self.status.text = "Export failed."
-                ExtensionUI.alert(title: "Export failed", message: error.localizedDescription, from: self)
             }
-        }
+        )
     }
 
     private func setPageScrollingEnabled(_ enabled: Bool) {

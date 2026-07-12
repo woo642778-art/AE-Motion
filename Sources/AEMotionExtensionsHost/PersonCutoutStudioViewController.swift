@@ -5,6 +5,7 @@ import Vision
 import CoreImage
 import CoreGraphics
 import ImageIO
+import AEMotionExtensionsCore
 
 struct PersonCutoutOptions: Sendable {
     var quality: Int
@@ -160,8 +161,10 @@ final class PersonCutoutExporter: @unchecked Sendable {
         inputURL: URL,
         outputURL: URL,
         options: PersonCutoutOptions,
+        cancellationToken: RenderCancellationToken? = nil,
         progress: @escaping @Sendable (Double) -> Void
     ) throws {
+        try cancellationToken?.checkCancellation()
         let asset = AVURLAsset(url: inputURL)
         guard let sourceTrack = asset.tracks(withMediaType: .video).first else {
             throw PersonCutoutError.noVideo
@@ -169,9 +172,18 @@ final class PersonCutoutExporter: @unchecked Sendable {
 
         let naturalRect = CGRect(origin: .zero, size: sourceTrack.naturalSize)
         let transformedRect = naturalRect.applying(sourceTrack.preferredTransform).standardized
-        let renderSize = CGSize(
+        let sourceRenderSize = CGSize(
             width: max(1, transformedRect.width.rounded()),
             height: max(1, transformedRect.height.rounded())
+        )
+        let dimensions = RenderSizePolicy.constrained(
+            width: Int(sourceRenderSize.width),
+            height: Int(sourceRenderSize.height)
+        )
+        let renderSize = CGSize(width: dimensions.width, height: dimensions.height)
+        let outputScale = CGAffineTransform(
+            scaleX: renderSize.width / max(1, sourceRenderSize.width),
+            y: renderSize.height / max(1, sourceRenderSize.height)
         )
         let translation = CGAffineTransform(
             translationX: -transformedRect.minX,
@@ -233,6 +245,12 @@ final class PersonCutoutExporter: @unchecked Sendable {
         let duration = max(0.001, asset.duration.seconds)
         var processingError: Error?
         while processingError == nil, let sample = readerOutput.copyNextSampleBuffer() {
+            do {
+                try cancellationToken?.checkCancellation()
+            } catch {
+                processingError = error
+                break
+            }
             autoreleasepool {
                 guard let sourceBuffer = CMSampleBufferGetImageBuffer(sample),
                       let pool = adaptor.pixelBufferPool else {
@@ -244,6 +262,8 @@ final class PersonCutoutExporter: @unchecked Sendable {
                 let input = rawInput
                     .transformed(by: sourceTrack.preferredTransform)
                     .transformed(by: translation)
+                    .cropped(to: CGRect(origin: .zero, size: sourceRenderSize))
+                    .transformed(by: outputScale)
                     .cropped(to: CGRect(origin: .zero, size: renderSize))
                 do {
                     let frameMask = trackedMaskDefinition(
@@ -280,6 +300,7 @@ final class PersonCutoutExporter: @unchecked Sendable {
                         colorSpace: CGColorSpaceCreateDeviceRGB()
                     )
                     while !writerInput.isReadyForMoreMediaData {
+                        try cancellationToken?.checkCancellation()
                         Thread.sleep(forTimeInterval: 0.002)
                     }
                     guard adaptor.append(outputBuffer, withPresentationTime: pts) else {
@@ -303,7 +324,14 @@ final class PersonCutoutExporter: @unchecked Sendable {
         writerInput.markAsFinished()
         let semaphore = DispatchSemaphore(value: 0)
         writer.finishWriting { semaphore.signal() }
-        semaphore.wait()
+        while semaphore.wait(timeout: .now() + 0.1) == .timedOut {
+            do {
+                try cancellationToken?.checkCancellation()
+            } catch {
+                writer.cancelWriting()
+                throw error
+            }
+        }
         guard writer.status == .completed else {
             throw PersonCutoutError.writerFailed(
                 writer.error?.localizedDescription ?? "Cutout export failed."
@@ -420,7 +448,11 @@ final class PersonCutoutStudioViewController: UIViewController {
     private let alphaSwitch = UISwitch()
     private let progress = UIProgressView(progressViewStyle: .default)
     private let status = ExtensionUI.label("Person segmentation uses the on-device Vision pipeline.")
+    private let exportButton = ExtensionUI.secondaryButton("Export Cutout", action: UIAction { _ in })
+    private let timelineButton = ExtensionUI.button("Render & Return to Timeline", action: UIAction { _ in })
+    private let cancelRenderButton = ExtensionUI.secondaryButton("Cancel Render", action: UIAction { _ in })
     private weak var pageScrollView: UIScrollView?
+    private lazy var renderJob = RenderJobCoordinator(owner: self, progressView: progress, statusLabel: status)
     private var picker: MediaSourcePicker?
     private var sourceURL: URL?
     private var trackingPath: CutoutTrackingPath?
@@ -477,13 +509,15 @@ final class PersonCutoutStudioViewController: UIViewController {
         let undo = ExtensionUI.secondaryButton("Undo Mask", action: UIAction { [weak self] _ in self?.maskEditor.undo() })
         let clear = ExtensionUI.secondaryButton("Clear Mask", action: UIAction { [weak self] _ in self?.maskEditor.clear() })
         let maskActions = ExtensionUI.horizontalStack([undo, clear])
-        let export = ExtensionUI.secondaryButton("Export Cutout", action: UIAction { [weak self] action in
+        exportButton.addAction(UIAction { [weak self] action in
             self?.render(addToTimeline: false, source: action.sender as? UIView)
-        })
-        let addToTimeline = ExtensionUI.button("Render & Return to Timeline", action: UIAction { [weak self] action in
+        }, for: .touchUpInside)
+        timelineButton.addAction(UIAction { [weak self] action in
             self?.render(addToTimeline: true, source: action.sender as? UIView)
-        })
-        let renderActions = ExtensionUI.horizontalStack([export, addToTimeline])
+        }, for: .touchUpInside)
+        cancelRenderButton.isEnabled = false
+        cancelRenderButton.addAction(UIAction { [weak self] _ in self?.renderJob.cancel() }, for: .touchUpInside)
+        let renderActions = ExtensionUI.horizontalStack([exportButton, timelineButton])
         let alphaRow = ExtensionUI.labeledSwitch("Transparent HEVC alpha", control: alphaSwitch)
 
         let stack = ExtensionUI.stack([
@@ -508,6 +542,7 @@ final class PersonCutoutStudioViewController: UIViewController {
             alphaRow,
             progress,
             renderActions,
+            cancelRenderButton,
             status,
             ExtensionUI.label("Render & Return to Timeline saves the result as the newest Photos video and safely returns to the project. The unsafe private Add Layer call was removed because it caused a completion-time crash.", style: .footnote),
         ])
@@ -644,47 +679,57 @@ final class PersonCutoutStudioViewController: UIViewController {
             manualMask: maskEditor.definition(),
             trackingPath: trackingPath
         )
-        let output = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AE-Motion-Cutout-\(UUID().uuidString).mov")
-        progress.progress = 0
-        status.text = addToTimeline ? "Rendering for timeline handoff…" : "Exporting cutout video…"
+        let output = RenderTemporaryFiles.makeURL(label: "Cutout")
+        let controls: [UIControl] = [
+            quality, editMode, brushSlider, trackingQuality, trackingFPS, alphaSwitch, exportButton, timelineButton
+        ]
 
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await Task.detached(priority: .userInitiated) {
-                    try PersonCutoutExporter().export(
-                        inputURL: sourceURL,
-                        outputURL: output,
-                        options: options
-                    ) { value in
-                        Task { @MainActor [weak self] in self?.progress.progress = Float(value) }
-                    }
-                }.value
-
-                if addToTimeline {
-                    self.status.text = "Rendered. Saving and returning to timeline…"
-                    TimelineHandoffCoordinator.renderResultReady(fileURL: output, from: self) { [weak self] result in
-                        guard let self else { return }
-                        switch result {
-                        case .success:
-                            self.status.text = "Saved as the newest Photos clip and returning to the timeline."
-                        case .failure(let error):
-                            self.status.text = "Rendered, but the safe timeline return was incomplete."
-                            ExtensionUI.alert(title: "Timeline handoff", message: error.localizedDescription, from: self)
+        renderJob.start(
+            name: "Person Cutout",
+            outputURL: output,
+            controls: controls,
+            cancelButton: cancelRenderButton,
+            initialStatus: addToTimeline ? "Rendering for timeline handoff…" : "Exporting cutout video…",
+            operation: { token, progress in
+                try PersonCutoutExporter().export(
+                    inputURL: sourceURL,
+                    outputURL: output,
+                    options: options,
+                    cancellationToken: token,
+                    progress: progress
+                )
+            },
+            completion: { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success:
+                    if addToTimeline {
+                        self.status.text = "Rendered. Saving and returning to timeline…"
+                        TimelineHandoffCoordinator.renderResultReady(fileURL: output, from: self) { [weak self] handoff in
+                            guard let self else { return }
+                            switch handoff {
+                            case .success:
+                                self.renderJob.outputWasConsumed(output)
+                                self.status.text = "Saved as the newest Photos clip and returning to the timeline."
+                            case .failure(let error):
+                                self.status.text = "Rendered, but the safe timeline return was incomplete."
+                                ExtensionUI.alert(title: "Timeline handoff", message: error.localizedDescription, from: self)
+                            }
                         }
+                    } else {
+                        self.status.text = options.outputAlpha
+                            ? "Transparent cutout export complete."
+                            : "Green-background cutout export complete."
+                        ExtensionUI.share(fileURL: output, from: self, source: source)
                     }
-                } else {
-                    self.status.text = options.outputAlpha
-                        ? "Transparent cutout export complete."
-                        : "Green-background cutout export complete."
-                    ExtensionUI.share(fileURL: output, from: self, source: source)
+                case .failure(.cancelled):
+                    self.status.text = "Cutout render cancelled."
+                case .failure(let error):
+                    self.status.text = "Render failed: \(error.localizedDescription)"
+                    ExtensionUI.alert(title: "Cutout render failed", message: error.localizedDescription, from: self)
                 }
-            } catch {
-                self.status.text = "Render failed."
-                ExtensionUI.alert(title: "Cutout render failed", message: error.localizedDescription, from: self)
             }
-        }
+        )
     }
 
     private func setPageScrollingEnabled(_ enabled: Bool) {

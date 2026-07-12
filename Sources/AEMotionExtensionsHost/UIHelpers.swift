@@ -102,6 +102,10 @@ enum ExtensionUI {
 
     static func share(fileURL: URL, from controller: UIViewController, source: UIView? = nil) {
         let share = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+        share.completionWithItemsHandler = { _, _, _, _ in
+            guard fileURL.lastPathComponent.hasPrefix("AE-Motion-") else { return }
+            RenderTemporaryFiles.remove(fileURL)
+        }
         if let popover = share.popoverPresentationController {
             popover.sourceView = source ?? controller.view
             popover.sourceRect = (source ?? controller.view).bounds

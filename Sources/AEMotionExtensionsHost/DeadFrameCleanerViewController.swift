@@ -2,6 +2,7 @@
 import UIKit
 import AVFoundation
 import CoreGraphics
+import AEMotionExtensionsCore
 
 struct DeadFrameRange: Sendable, Equatable {
     var start: Double
@@ -27,8 +28,10 @@ enum DeadFrameAnalyzer {
         url: URL,
         frameRate: Double,
         threshold: Double,
+        cancellationToken: RenderCancellationToken? = nil,
         progress: @escaping @Sendable (Double) -> Void
     ) throws -> [DeadFrameRange] {
+        try cancellationToken?.checkCancellation()
         let asset = AVURLAsset(url: url)
         guard asset.tracks(withMediaType: .video).first != nil else { throw DeadFrameCleanerError.noVideo }
         let duration = max(0, asset.duration.seconds)
@@ -45,6 +48,7 @@ enum DeadFrameAnalyzer {
         let frameDuration = 1.0 / fps
 
         for index in 0..<total {
+            try cancellationToken?.checkCancellation()
             let time = min(duration, Double(index) / fps)
             var actual = CMTime.invalid
             guard let image = try? generator.copyCGImage(
@@ -68,8 +72,10 @@ enum DeadFrameAnalyzer {
     static func exportRemovingRanges(
         sourceURL: URL,
         outputURL: URL,
-        removeRanges: [DeadFrameRange]
+        removeRanges: [DeadFrameRange],
+        cancellationToken: RenderCancellationToken? = nil
     ) throws {
+        try cancellationToken?.checkCancellation()
         let asset = AVURLAsset(url: sourceURL)
         guard let sourceVideo = asset.tracks(withMediaType: .video).first else {
             throw DeadFrameCleanerError.noVideo
@@ -92,6 +98,7 @@ enum DeadFrameAnalyzer {
 
         var cursor = CMTime.zero
         for range in keep where range.end > range.start {
+            try cancellationToken?.checkCancellation()
             let timeRange = CMTimeRange(
                 start: CMTime(seconds: range.start, preferredTimescale: 600),
                 duration: CMTime(seconds: range.end - range.start, preferredTimescale: 600)
@@ -115,7 +122,14 @@ enum DeadFrameAnalyzer {
         session.outputFileType = .mov
         let semaphore = DispatchSemaphore(value: 0)
         session.exportAsynchronously { semaphore.signal() }
-        semaphore.wait()
+        while semaphore.wait(timeout: .now() + 0.1) == .timedOut {
+            do {
+                try cancellationToken?.checkCancellation()
+            } catch {
+                session.cancelExport()
+                throw error
+            }
+        }
         guard session.status == .completed else {
             throw DeadFrameCleanerError.exportFailed(
                 session.error?.localizedDescription ?? "Dead-frame export failed."
@@ -188,6 +202,10 @@ final class DeadFrameCleanerViewController: UIViewController {
     private let thresholdField = ExtensionUI.field("Difference threshold 0–1", value: "0.012")
     private let progress = UIProgressView(progressViewStyle: .default)
     private let status = ExtensionUI.label("Detects consecutive near-identical frames and removes them while keeping audio aligned.")
+    private let exportButton = ExtensionUI.secondaryButton("Export Cleaned Video", action: UIAction { _ in })
+    private let timelineButton = ExtensionUI.button("Render & Return to Timeline", action: UIAction { _ in })
+    private let cancelRenderButton = ExtensionUI.secondaryButton("Cancel Render", action: UIAction { _ in })
+    private lazy var renderJob = RenderJobCoordinator(owner: self, progressView: progress, statusLabel: status)
     private var picker: MediaSourcePicker?
     private var sourceURL: URL?
     private var ranges: [DeadFrameRange] = []
@@ -200,17 +218,19 @@ final class DeadFrameCleanerViewController: UIViewController {
         let photos = ExtensionUI.button("Choose from Photos", action: UIAction { [weak self] _ in self?.choose(photos: true) })
         let files = ExtensionUI.button("Choose from Files", action: UIAction { [weak self] _ in self?.choose(photos: false) })
         let analyze = ExtensionUI.button("Analyze Dead Frames", action: UIAction { [weak self] _ in self?.analyze() })
-        let export = ExtensionUI.secondaryButton("Export Cleaned Video", action: UIAction { [weak self] action in
+        exportButton.addAction(UIAction { [weak self] action in
             self?.render(addToTimeline: false, source: action.sender as? UIView)
-        })
-        let addToTimeline = ExtensionUI.button("Render & Return to Timeline", action: UIAction { [weak self] action in
+        }, for: .touchUpInside)
+        timelineButton.addAction(UIAction { [weak self] action in
             self?.render(addToTimeline: true, source: action.sender as? UIView)
-        })
-        let renderActions = ExtensionUI.horizontalStack([export, addToTimeline])
+        }, for: .touchUpInside)
+        cancelRenderButton.isEnabled = false
+        cancelRenderButton.addAction(UIAction { [weak self] _ in self?.renderJob.cancel() }, for: .touchUpInside)
+        let renderActions = ExtensionUI.horizontalStack([exportButton, timelineButton])
 
         ExtensionUI.installScrollStack(ExtensionUI.stack([
             ExtensionUI.label("Automatic duplicate/dead-frame removal for clips that contain repeated frames."),
-            preview, photos, files, sourceLabel, fpsField, thresholdField, progress, analyze, renderActions, status,
+            preview, photos, files, sourceLabel, fpsField, thresholdField, progress, analyze, renderActions, cancelRenderButton, status,
             ExtensionUI.label("Render & Return to Timeline avoids the share sheet: it saves the result as the newest Photos video and returns safely to the open project timeline.", style: .footnote)
         ]), in: self)
     }
@@ -270,41 +290,56 @@ final class DeadFrameCleanerViewController: UIViewController {
             ExtensionUI.alert(title: "Analyze first", message: "No dead-frame ranges are available yet.", from: self)
             return
         }
-        let output = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AE-Motion-DeadFrames-Cleaned-\(UUID().uuidString).mov")
+        let output = RenderTemporaryFiles.makeURL(label: "DeadFrames-Cleaned")
         let ranges = self.ranges
-        status.text = addToTimeline ? "Rendering for timeline handoff…" : "Exporting cleaned video…"
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await Task.detached(priority: .userInitiated) {
-                    try DeadFrameAnalyzer.exportRemovingRanges(
-                        sourceURL: sourceURL,
-                        outputURL: output,
-                        removeRanges: ranges
-                    )
-                }.value
-                if addToTimeline {
-                    self.status.text = "Rendered. Saving and returning to timeline…"
-                    TimelineHandoffCoordinator.renderResultReady(fileURL: output, from: self) { [weak self] result in
-                        guard let self else { return }
-                        switch result {
-                        case .success:
-                            self.status.text = "Saved as the newest Photos clip and returning to the timeline."
-                        case .failure(let error):
-                            self.status.text = "Rendered, but the safe timeline return was incomplete."
-                            ExtensionUI.alert(title: "Timeline handoff", message: error.localizedDescription, from: self)
+        let controls: [UIControl] = [fpsField, thresholdField, exportButton, timelineButton]
+
+        renderJob.start(
+            name: "Dead Frame Cleaner",
+            outputURL: output,
+            controls: controls,
+            cancelButton: cancelRenderButton,
+            initialStatus: addToTimeline ? "Rendering for timeline handoff…" : "Exporting cleaned video…",
+            operation: { token, progress in
+                progress(0.08)
+                try DeadFrameAnalyzer.exportRemovingRanges(
+                    sourceURL: sourceURL,
+                    outputURL: output,
+                    removeRanges: ranges,
+                    cancellationToken: token
+                )
+                progress(1)
+            },
+            completion: { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success:
+                    if addToTimeline {
+                        self.status.text = "Rendered. Saving and returning to timeline…"
+                        TimelineHandoffCoordinator.renderResultReady(fileURL: output, from: self) { [weak self] handoff in
+                            guard let self else { return }
+                            switch handoff {
+                            case .success:
+                                self.renderJob.outputWasConsumed(output)
+                                self.status.text = "Saved as the newest Photos clip and returning to the timeline."
+                            case .failure(let error):
+                                self.status.text = "Rendered, but the safe timeline return was incomplete."
+                                ExtensionUI.alert(title: "Timeline handoff", message: error.localizedDescription, from: self)
+                            }
                         }
+                    } else {
+                        self.status.text = "Cleaned export complete."
+                        ExtensionUI.share(fileURL: output, from: self, source: source)
                     }
-                } else {
-                    self.status.text = "Cleaned export complete."
-                    ExtensionUI.share(fileURL: output, from: self, source: source)
+                case .failure(.cancelled):
+                    self.status.text = "Cleaned-video render cancelled."
+                case .failure(let error):
+                    self.status.text = "Export failed: \(error.localizedDescription)"
+                    ExtensionUI.alert(title: "Export failed", message: error.localizedDescription, from: self)
                 }
-            } catch {
-                self.status.text = "Export failed."
-                ExtensionUI.alert(title: "Export failed", message: error.localizedDescription, from: self)
             }
-        }
+        )
     }
+
 }
 #endif

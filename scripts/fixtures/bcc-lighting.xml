@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<effect id="com.alightcreative.effects.bccfilmglow"
+        name="BCC Film Glow"
+        category="lighting"
+        tags="film,glow">
+    <params><spinner id="amount" default="1"/></params>
+</effect>
