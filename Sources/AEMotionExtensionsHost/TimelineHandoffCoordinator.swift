@@ -2,11 +2,6 @@
 import UIKit
 import Photos
 
-private final class WeakControllerBox: @unchecked Sendable {
-    weak var value: UIViewController?
-    init(_ value: UIViewController?) { self.value = value }
-}
-
 @MainActor
 enum TimelineHandoffCoordinator {
     enum HandoffError: Error, LocalizedError, Sendable {
@@ -26,68 +21,93 @@ enum TimelineHandoffCoordinator {
         }
     }
 
-    /// Stable handoff used by all render tools.
-    /// The rendered file is saved as the newest Photos video and the extension UI is closed
-    /// back toward the active project editor. It intentionally does not invoke private
-    /// addLayer selectors because those calls caused a completion-time crash on device.
+    /// Saves the rendered file to Photos on a nonisolated callback path, then returns
+    /// to the active project editor on the main actor.
+    ///
+    /// Photos invokes its completion handlers on a private serial queue. Those callbacks
+    /// must not inherit MainActor isolation or Swift 6 will terminate with
+    /// _dispatch_assert_queue_fail immediately after the save reaches 100%.
     static func renderResultReady(
         fileURL: URL,
         from controller: UIViewController,
         completion: @escaping @MainActor @Sendable (Result<Void, HandoffError>) -> Void
     ) {
-        let controllerBox = WeakControllerBox(controller)
-        requestAddAuthorization { result in
-            switch result {
+        Task { @MainActor [weak controller] in
+            let saveResult = await saveVideoToPhotos(fileURL: fileURL)
+
+            switch saveResult {
             case .failure(let error):
                 completion(.failure(error))
-            case .success:
-                PHPhotoLibrary.shared().performChanges({
-                    PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: fileURL)
-                }) { success, error in
-                    Task { @MainActor in
-                        guard success else {
-                            completion(.failure(.photoSaveFailed(
-                                error?.localizedDescription ?? "Could not save the rendered clip to Photos."
-                            )))
-                            return
-                        }
-                        guard let controller = controllerBox.value else {
-                            completion(.failure(.projectEditorNotFound))
-                            return
-                        }
-                        guard let projectEditor = findProjectEditor() else {
-                            completion(.failure(.projectEditorNotFound))
-                            return
-                        }
 
-                        completion(.success(()))
-                        DispatchQueue.main.async {
-                            closeToolUI(from: controller, toward: projectEditor)
-                        }
-                    }
+            case .success:
+                guard let controller else {
+                    completion(.failure(.projectEditorNotFound))
+                    return
+                }
+                guard let projectEditor = findProjectEditor() else {
+                    completion(.failure(.projectEditorNotFound))
+                    return
+                }
+
+                completion(.success(()))
+
+                // Keep all UIKit navigation on the main actor. Deferring one turn also
+                // lets the caller finish its status/progress update before the tool closes.
+                await Task.yield()
+                closeToolUI(from: controller, toward: projectEditor)
+            }
+        }
+    }
+
+    /// Performs authorization and Photos saving without actor inheritance.
+    /// The Photos callbacks may execute on com.apple.PHPhotoLibrary.changes.
+    private nonisolated static func saveVideoToPhotos(
+        fileURL: URL
+    ) async -> Result<Void, HandoffError> {
+        let authorization = await requestAddAuthorization()
+        if case .failure = authorization {
+            return authorization
+        }
+
+        return await withCheckedContinuation {
+            (continuation: CheckedContinuation<Result<Void, HandoffError>, Never>) in
+
+            PHPhotoLibrary.shared().performChanges({
+                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: fileURL)
+            }) { success, error in
+                if success {
+                    continuation.resume(returning: .success(()))
+                } else {
+                    continuation.resume(returning: .failure(.photoSaveFailed(
+                        error?.localizedDescription
+                            ?? "Could not save the rendered clip to Photos."
+                    )))
                 }
             }
         }
     }
 
-    private static func requestAddAuthorization(
-        completion: @escaping @MainActor @Sendable (Result<Void, HandoffError>) -> Void
-    ) {
+    /// Requests Photos add-only permission from a nonisolated context so the Photos
+    /// framework can call its completion block on any queue without violating MainActor.
+    private nonisolated static func requestAddAuthorization(
+    ) async -> Result<Void, HandoffError> {
         let current = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+
         if current == .authorized || current == .limited {
-            completion(.success(()))
-            return
+            return .success(())
         }
         if current == .denied || current == .restricted {
-            completion(.failure(.photoPermissionDenied))
-            return
+            return .failure(.photoPermissionDenied)
         }
-        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-            Task { @MainActor in
+
+        return await withCheckedContinuation {
+            (continuation: CheckedContinuation<Result<Void, HandoffError>, Never>) in
+
+            PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
                 if status == .authorized || status == .limited {
-                    completion(.success(()))
+                    continuation.resume(returning: .success(()))
                 } else {
-                    completion(.failure(.photoPermissionDenied))
+                    continuation.resume(returning: .failure(.photoPermissionDenied))
                 }
             }
         }
@@ -139,6 +159,7 @@ enum TimelineHandoffCoordinator {
         visited: inout Set<ObjectIdentifier>
     ) -> UIViewController? {
         guard visited.insert(ObjectIdentifier(controller)).inserted else { return nil }
+
         let className = NSStringFromClass(type(of: controller))
         if className.localizedCaseInsensitiveContains("ProjectEditVC") {
             return controller
@@ -148,19 +169,29 @@ enum TimelineHandoffCoordinator {
            let match = findProjectEditor(in: presented, visited: &visited) {
             return match
         }
+
         if let navigation = controller as? UINavigationController {
             for child in navigation.viewControllers.reversed() {
-                if let match = findProjectEditor(in: child, visited: &visited) { return match }
+                if let match = findProjectEditor(in: child, visited: &visited) {
+                    return match
+                }
             }
         }
+
         if let tab = controller as? UITabBarController {
             for child in (tab.viewControllers ?? []).reversed() {
-                if let match = findProjectEditor(in: child, visited: &visited) { return match }
+                if let match = findProjectEditor(in: child, visited: &visited) {
+                    return match
+                }
             }
         }
+
         for child in controller.children.reversed() {
-            if let match = findProjectEditor(in: child, visited: &visited) { return match }
+            if let match = findProjectEditor(in: child, visited: &visited) {
+                return match
+            }
         }
+
         return nil
     }
 }
