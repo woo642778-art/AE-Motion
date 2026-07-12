@@ -14,13 +14,13 @@ final class HostDiagnosticsViewController: UIViewController {
         output.isEditable = false
         output.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
         output.heightAnchor.constraint(equalToConstant: 520).isActive = true
-        let scan = ExtensionUI.button("Scan Runtime", action: UIAction { [weak self] _ in self?.scan() })
+        let scanButton = ExtensionUI.button("Scan Runtime", action: UIAction { [weak self] _ in self?.scan() })
         let share = ExtensionUI.button("Share Report", action: UIAction { [weak self] action in
             guard let self else { return }
             ExtensionUI.share(text: self.report, from: self, source: action.sender as? UIView)
         })
         ExtensionUI.installScrollStack(ExtensionUI.stack([
-            ExtensionUI.label("This report is used to discover the private speed/timeline bridge needed for direct application to the selected Alight Motion layer."), scan, share, output
+            ExtensionUI.label("This report is used to discover the private speed/timeline bridge needed for direct application to the selected Alight Motion layer."), scanButton, share, output
         ]), in: self)
         scan()
     }

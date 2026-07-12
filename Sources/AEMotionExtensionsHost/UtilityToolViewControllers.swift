@@ -50,13 +50,13 @@ final class EasingCurveViewController: UIViewController {
         output.isEditable = false
         output.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         output.heightAnchor.constraint(equalToConstant: 180).isActive = true
-        let generate = ExtensionUI.button("Generate", action: UIAction { [weak self] _ in self?.generate() })
+        let generateButton = ExtensionUI.button("Generate", action: UIAction { [weak self] _ in self?.generate() })
         let copy = ExtensionUI.button("Share CSV", action: UIAction { [weak self] action in
             guard let self else { return }
             ExtensionUI.share(text: self.csv, from: self, source: nil)
         })
         ExtensionUI.installScrollStack(ExtensionUI.stack([
-            ExtensionUI.label("Generate sampled keyframe values for smooth motion."), preset, duration, samples, graph, generate, copy, output
+            ExtensionUI.label("Generate sampled keyframe values for smooth motion."), preset, duration, samples, graph, generateButton, copy, output
         ]), in: self)
         generate()
     }
@@ -101,13 +101,13 @@ final class RandomValuesViewController: UIViewController {
         output.isEditable = false
         output.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
         output.heightAnchor.constraint(equalToConstant: 240).isActive = true
-        let generate = ExtensionUI.button("Generate", action: UIAction { [weak self] _ in self?.generate() })
+        let generateButton = ExtensionUI.button("Generate", action: UIAction { [weak self] _ in self?.generate() })
         let share = ExtensionUI.button("Share Values", action: UIAction { [weak self] action in
             guard let self else { return }
             ExtensionUI.share(text: self.text, from: self, source: nil)
         })
         ExtensionUI.installScrollStack(ExtensionUI.stack([
-            ExtensionUI.label("Seeded values are repeatable, useful for shake and procedural animation."), count, minimum, maximum, seed, generate, share, output
+            ExtensionUI.label("Seeded values are repeatable, useful for shake and procedural animation."), count, minimum, maximum, seed, generateButton, share, output
         ]), in: self)
         generate()
     }
@@ -134,9 +134,9 @@ final class LayerOffsetViewController: UIViewController {
         super.viewDidLoad()
         title = "Layer Offset Planner"
         view.backgroundColor = .systemBackground
-        let calculate = ExtensionUI.button("Calculate", action: UIAction { [weak self] _ in self?.calculate() })
+        let calculateButton = ExtensionUI.button("Calculate", action: UIAction { [weak self] _ in self?.calculate() })
         ExtensionUI.installScrollStack(ExtensionUI.stack([
-            ExtensionUI.label("Plan sequential layer starts for cascades and typography."), count, first, offset, calculate, result
+            ExtensionUI.label("Plan sequential layer starts for cascades and typography."), count, first, offset, calculateButton, result
         ]), in: self)
         calculate()
     }
@@ -166,13 +166,13 @@ final class CameraShakeViewController: UIViewController {
         output.isEditable = false
         output.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         output.heightAnchor.constraint(equalToConstant: 260).isActive = true
-        let generate = ExtensionUI.button("Generate", action: UIAction { [weak self] _ in self?.generate() })
+        let generateButton = ExtensionUI.button("Generate", action: UIAction { [weak self] _ in self?.generate() })
         let share = ExtensionUI.button("Share CSV", action: UIAction { [weak self] action in
             guard let self else { return }
             ExtensionUI.share(text: self.csv, from: self, source: nil)
         })
         ExtensionUI.installScrollStack(ExtensionUI.stack([
-            ExtensionUI.label("Generate deterministic X, Y and rotation samples."), count, amplitude, decay, seed, generate, share, output
+            ExtensionUI.label("Generate deterministic X, Y and rotation samples."), count, amplitude, decay, seed, generateButton, share, output
         ]), in: self)
         generate()
     }
@@ -257,13 +257,13 @@ final class ColorPaletteViewController: UIViewController {
         view.backgroundColor = .systemBackground
         paletteStack.axis = .vertical
         paletteStack.spacing = 8
-        let generate = ExtensionUI.button("Generate", action: UIAction { [weak self] _ in self?.generate() })
+        let generateButton = ExtensionUI.button("Generate", action: UIAction { [weak self] _ in self?.generate() })
         let share = ExtensionUI.button("Share HEX", action: UIAction { [weak self] action in
             guard let self else { return }
             ExtensionUI.share(text: self.hexText, from: self, source: nil)
         })
         ExtensionUI.installScrollStack(ExtensionUI.stack([
-            ExtensionUI.label("Build a five-color analogous palette."), hue, saturation, lightness, generate, share, paletteStack
+            ExtensionUI.label("Build a five-color analogous palette."), hue, saturation, lightness, generateButton, share, paletteStack
         ]), in: self)
         generate()
     }
