@@ -354,5 +354,53 @@ final class PresetPlatformTests: XCTestCase {
         XCTAssertEqual(colors, [PresetColor(red: 1, green: 0, blue: 0), PresetColor(red: 0, green: 0, blue: 1)])
     }
 
+
+    func testApplicationResolverSkipsUnsupportedTargetsAndDeduplicatesCandidates() {
+        let document = PresetDocument(
+            id: "multi-target",
+            name: "Multi Target",
+            kind: .motion,
+            targets: ["unsupported.target", "camera.shake", "camera.shake", "color.palette"]
+        )
+
+        let candidates = PresetApplicationResolver.candidates(for: document)
+
+        XCTAssertEqual(candidates.map(\.targetID), ["camera.shake", "color.palette"])
+        XCTAssertEqual(candidates.map(\.adapterID), ["adapter.camera-shake.v1", "adapter.color-palette.v1"])
+    }
+
+    func testApplicationResolverRejectsTargetThatPresetDoesNotDeclare() {
+        let document = PresetDocument(
+            id: "velocity-only",
+            name: "Velocity Only",
+            kind: .velocity,
+            targets: ["speed.remap"]
+        )
+
+        XCTAssertThrowsError(
+            try PresetApplicationResolver.resolve(document: document, requestedTarget: "camera.shake")
+        ) { error in
+            XCTAssertEqual(error as? PresetApplicationResolutionError, .targetNotDeclared("camera.shake"))
+        }
+    }
+
+    func testApplicationResolverReturnsDeclaredSupportedTarget() throws {
+        let document = PresetDocument(
+            id: "graph",
+            name: "Graph",
+            kind: .graph,
+            targets: ["easing.curve"]
+        )
+
+        let candidate = try PresetApplicationResolver.resolve(
+            document: document,
+            requestedTarget: "easing.curve"
+        )
+
+        XCTAssertEqual(candidate.targetID, "easing.curve")
+        XCTAssertEqual(candidate.title, "Easing Curve")
+        XCTAssertEqual(candidate.adapterID, "adapter.easing-curve.v1")
+    }
+
 }
 

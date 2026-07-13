@@ -81,7 +81,7 @@ final class EasingCurveViewController: UIViewController {
         })
         let savePreset = ExtensionUI.secondaryButton("Save Curve as XML Preset", action: UIAction { [weak self] _ in self?.saveCurrentPreset() })
         let openPresets = ExtensionUI.secondaryButton("Open Preset Studio", action: UIAction { [weak self] _ in
-            self?.navigationController?.pushViewController(PresetLibraryViewController(), animated: true)
+            self?.openPresetStudio()
         })
 
         pageScrollView = ExtensionUI.installScrollStack(ExtensionUI.stack([
@@ -171,26 +171,46 @@ final class EasingCurveViewController: UIViewController {
         generate()
     }
 
+    private func openPresetStudio() {
+        let context = PresetApplicationContext(
+            targetID: "easing.curve",
+            title: "Easing Curve",
+            adapterID: "adapter.easing-curve.v1",
+            sourceViewController: self
+        ) { [weak self] document in
+            guard let self else { throw PresetApplicationHostError.sourceUnavailable }
+            try self.applyPresetFromStudio(document)
+        }
+        navigationController?.pushViewController(
+            PresetLibraryViewController(applicationContext: context),
+            animated: true
+        )
+    }
+
     private func applyPreset(_ document: PresetDocument) {
         do {
-            let curve = try EasingPresetAdapter.curve(from: document)
-            let points = curve.points.sorted { $0.time < $1.time }.map {
-                EditableCurvePoint(
-                    id: $0.id,
-                    x: $0.time,
-                    y: $0.value,
-                    incomingSlope: $0.incomingSlope,
-                    outgoingSlope: $0.outgoingSlope
-                )
-            }
-            isSyncing = true
-            editor.setPoints(points)
-            isSyncing = false
-            activePreset = document
-            generate()
+            try applyPresetFromStudio(document)
         } catch {
             ExtensionUI.alert(title: "Preset could not be applied", message: error.localizedDescription, from: self)
         }
+    }
+
+    private func applyPresetFromStudio(_ document: PresetDocument) throws {
+        let curve = try EasingPresetAdapter.curve(from: document)
+        let points = curve.points.sorted { $0.time < $1.time }.map {
+            EditableCurvePoint(
+                id: $0.id,
+                x: $0.time,
+                y: $0.value,
+                incomingSlope: $0.incomingSlope,
+                outgoingSlope: $0.outgoingSlope
+            )
+        }
+        isSyncing = true
+        editor.setPoints(points)
+        isSyncing = false
+        activePreset = document
+        generate()
     }
 
     private func saveCurrentPreset() {
@@ -327,7 +347,7 @@ final class CameraShakeViewController: UIViewController {
         })
         let savePreset = ExtensionUI.secondaryButton("Save Shake as XML Preset", action: UIAction { [weak self] _ in self?.saveCurrentPreset() })
         let openPresets = ExtensionUI.secondaryButton("Open Preset Studio", action: UIAction { [weak self] _ in
-            self?.navigationController?.pushViewController(PresetLibraryViewController(), animated: true)
+            self?.openPresetStudio()
         })
         ExtensionUI.installScrollStack(ExtensionUI.stack([
             ExtensionUI.label("Generate deterministic X, Y and rotation samples."), count, amplitude, decay, seed, generateButton, share,
@@ -337,17 +357,38 @@ final class CameraShakeViewController: UIViewController {
         generate()
     }
 
+    private func openPresetStudio() {
+        let context = PresetApplicationContext(
+            targetID: "camera.shake",
+            title: "Camera Shake",
+            adapterID: "adapter.camera-shake.v1",
+            sourceViewController: self
+        ) { [weak self] document in
+            guard let self else { throw PresetApplicationHostError.sourceUnavailable }
+            try self.applyPresetFromStudio(document)
+        }
+        navigationController?.pushViewController(
+            PresetLibraryViewController(applicationContext: context),
+            animated: true
+        )
+    }
+
     private func applyPreset(_ document: PresetDocument) {
         do {
-            let configuration = try ShakePresetAdapter.configuration(from: document)
-            count.text = String(configuration.count)
-            amplitude.text = String(configuration.amplitude)
-            decay.text = String(configuration.decay)
-            seed.text = String(configuration.seed)
-            activePreset = document
+            try applyPresetFromStudio(document)
         } catch {
             ExtensionUI.alert(title: "Preset could not be applied", message: error.localizedDescription, from: self)
         }
+    }
+
+    private func applyPresetFromStudio(_ document: PresetDocument) throws {
+        let configuration = try ShakePresetAdapter.configuration(from: document)
+        count.text = String(configuration.count)
+        amplitude.text = String(configuration.amplitude)
+        decay.text = String(configuration.decay)
+        seed.text = String(configuration.seed)
+        activePreset = document
+        generate()
     }
 
     private func saveCurrentPreset() {
@@ -450,7 +491,7 @@ final class ColorPaletteViewController: UIViewController {
             self?.saveCurrentPreset()
         })
         let openPresets = ExtensionUI.secondaryButton("Open Preset Studio", action: UIAction { [weak self] _ in
-            self?.navigationController?.pushViewController(PresetLibraryViewController(), animated: true)
+            self?.openPresetStudio()
         })
 
         ExtensionUI.installScrollStack(ExtensionUI.stack([
@@ -483,16 +524,35 @@ final class ColorPaletteViewController: UIViewController {
         display(generated)
     }
 
+    private func openPresetStudio() {
+        let context = PresetApplicationContext(
+            targetID: "color.palette",
+            title: "Color Palette",
+            adapterID: "adapter.color-palette.v1",
+            sourceViewController: self
+        ) { [weak self] document in
+            guard let self else { throw PresetApplicationHostError.sourceUnavailable }
+            try self.applyPresetFromStudio(document)
+        }
+        navigationController?.pushViewController(
+            PresetLibraryViewController(applicationContext: context),
+            animated: true
+        )
+    }
+
     private func applyPreset(_ document: PresetDocument) {
         do {
-            let colors = try ColorPresetAdapter.colors(from: document)
-            activePreset = document
-            sourceLabel.text = "Preset: \(document.name)"
-            display(colors)
+            try applyPresetFromStudio(document)
         } catch {
             ExtensionUI.alert(title: "Preset could not be applied", message: error.localizedDescription, from: self)
-            generate()
         }
+    }
+
+    private func applyPresetFromStudio(_ document: PresetDocument) throws {
+        let colors = try ColorPresetAdapter.colors(from: document)
+        activePreset = document
+        sourceLabel.text = "Preset: \(document.name)"
+        display(colors)
     }
 
     private func display(_ colors: [PresetColor]) {

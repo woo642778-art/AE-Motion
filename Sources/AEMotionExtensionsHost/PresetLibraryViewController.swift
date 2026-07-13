@@ -6,6 +6,7 @@ import AEMotionExtensionsCore
 @MainActor
 final class PresetLibraryViewController: UITableViewController, UISearchResultsUpdating, UISearchBarDelegate, UIDocumentPickerDelegate {
     private let environment = PresetLibraryEnvironment.shared
+    private let applicationContext: PresetApplicationContext?
     private var documents: [PresetDocument] = []
     private var query = ""
     private var selectedKind: PresetKind?
@@ -15,9 +16,19 @@ final class PresetLibraryViewController: UITableViewController, UISearchResultsU
     private var sortMode: SortMode = .name
     private var changeObserver: NSObjectProtocol?
 
+    init(applicationContext: PresetApplicationContext? = nil) {
+        self.applicationContext = applicationContext
+        super.init(style: .insetGrouped)
+    }
+
+    required init?(coder: NSCoder) {
+        applicationContext = nil
+        super.init(coder: coder)
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Preset Studio"
+        title = applicationContext.map { "Presets · \($0.candidate.title)" } ?? "Preset Studio"
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "preset")
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 76
@@ -31,13 +42,9 @@ final class PresetLibraryViewController: UITableViewController, UISearchResultsU
         navigationItem.searchController = search
         navigationItem.hidesSearchBarWhenScrolling = false
 
+        navigationItem.backButtonDisplayMode = .minimal
+        configureBackOrCloseButtonIfNeeded()
         rebuildNavigationActions()
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            image: UIImage(systemName: "star"),
-            style: .plain,
-            target: self,
-            action: #selector(toggleFavoritesOnly)
-        )
 
         changeObserver = NotificationCenter.default.addObserver(
             forName: PresetLibraryEnvironment.didChangeNotification,
@@ -51,10 +58,40 @@ final class PresetLibraryViewController: UITableViewController, UISearchResultsU
 
 
     private func rebuildNavigationActions() {
+        let favorites = UIBarButtonItem(
+            image: UIImage(systemName: favoritesOnly ? "star.fill" : "star"),
+            style: .plain,
+            target: self,
+            action: #selector(toggleFavoritesOnly)
+        )
+        favorites.accessibilityLabel = favoritesOnly ? "Show all presets" : "Show favorites only"
         navigationItem.rightBarButtonItems = [
             UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(createPreset)),
+            favorites,
             UIBarButtonItem(image: UIImage(systemName: "ellipsis.circle"), menu: actionsMenu()),
         ]
+    }
+
+    private func configureBackOrCloseButtonIfNeeded() {
+        guard let navigationController else { return }
+        if navigationController.viewControllers.first === self {
+            let close = UIBarButtonItem(
+                image: UIImage(systemName: "xmark"),
+                style: .plain,
+                target: self,
+                action: #selector(closePresetStudio)
+            )
+            close.accessibilityLabel = "Close Preset Studio"
+            navigationItem.leftBarButtonItem = close
+        } else {
+            navigationItem.leftBarButtonItem = nil
+        }
+    }
+
+    @objc private func closePresetStudio() {
+        if presentingViewController != nil || navigationController?.presentingViewController != nil {
+            dismiss(animated: true)
+        }
     }
 
     private func actionsMenu() -> UIMenu {
@@ -97,7 +134,6 @@ final class PresetLibraryViewController: UITableViewController, UISearchResultsU
 
     @objc private func toggleFavoritesOnly() {
         favoritesOnly.toggle()
-        navigationItem.leftBarButtonItem?.image = UIImage(systemName: favoritesOnly ? "star.fill" : "star")
         reload()
     }
 
@@ -138,7 +174,7 @@ final class PresetLibraryViewController: UITableViewController, UISearchResultsU
             environment.documents(inCollection: selectedCollection),
             text: query,
             kind: selectedKind,
-            target: nil,
+            target: applicationContext?.candidate.targetID,
             favoriteIDs: environment.favoriteIDs,
             favoritesOnly: favoritesOnly
         )
@@ -156,7 +192,10 @@ final class PresetLibraryViewController: UITableViewController, UISearchResultsU
             }
         }
         tableView.reloadData()
-        tableView.backgroundView = documents.isEmpty ? emptyLabel("No presets match the current filter.") : nil
+        let emptyMessage = applicationContext == nil
+            ? "No presets match the current filter."
+            : "No compatible presets match the current filter."
+        tableView.backgroundView = documents.isEmpty ? emptyLabel(emptyMessage) : nil
         tableView.tableHeaderView = environment.loadIssues.isEmpty ? nil : issueHeader(environment.loadIssues)
         rebuildNavigationActions()
     }
@@ -201,7 +240,13 @@ final class PresetLibraryViewController: UITableViewController, UISearchResultsU
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        navigationController?.pushViewController(PresetDetailViewController(document: documents[indexPath.row]), animated: true)
+        navigationController?.pushViewController(
+            PresetDetailViewController(
+                document: documents[indexPath.row],
+                applicationContext: applicationContext
+            ),
+            animated: true
+        )
     }
 
     override func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
@@ -247,13 +292,17 @@ final class PresetLibraryViewController: UITableViewController, UISearchResultsU
 @MainActor
 final class PresetDetailViewController: UIViewController {
     private let environment = PresetLibraryEnvironment.shared
+    private let applicationContext: PresetApplicationContext?
     private var document: PresetDocument
     private var workingDocument: PresetDocument
     private let content = UIStackView()
+    private let applyButton = ExtensionUI.button("Apply Preset", action: UIAction { _ in })
+    private var isApplying = false
 
-    init(document: PresetDocument) {
+    init(document: PresetDocument, applicationContext: PresetApplicationContext? = nil) {
         self.document = document
         self.workingDocument = document
+        self.applicationContext = applicationContext
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -262,6 +311,8 @@ final class PresetDetailViewController: UIViewController {
         super.viewDidLoad()
         title = document.name
         view.backgroundColor = .systemBackground
+        navigationItem.backButtonDisplayMode = .minimal
+        applyButton.addAction(UIAction { [weak self] _ in self?.beginApplyPreset() }, for: .touchUpInside)
         navigationItem.rightBarButtonItems = [
             UIBarButtonItem(title: "Export", style: .plain, target: self, action: #selector(exportPreset)),
             UIBarButtonItem(title: environment.isBuiltin(document) ? "Duplicate" : "Edit", style: .plain, target: self, action: #selector(editPreset)),
@@ -326,8 +377,23 @@ final class PresetDetailViewController: UIViewController {
             content.addArrangedSubview(label)
         }
 
-        let apply = ExtensionUI.button("Apply Preset", action: UIAction { [weak self] _ in self?.applyPreset() })
-        apply.isEnabled = validation.isValid && compatibility.isValid
+        let candidates = PresetApplicationResolver.candidates(for: workingDocument)
+        let contextMatches = applicationContext.map { context in
+            candidates.contains(where: { $0.targetID == context.candidate.targetID })
+        } ?? true
+        applyButton.setTitle(
+            applicationContext.map { "Apply to \($0.candidate.title)" } ?? "Apply Preset…",
+            for: .normal
+        )
+        applyButton.isEnabled = validation.isValid && compatibility.isValid && contextMatches && !candidates.isEmpty && !isApplying
+        if let applicationContext, !contextMatches {
+            let label = ExtensionUI.label(
+                "This preset cannot be applied to \(applicationContext.candidate.title). Supported targets: \(candidates.map(\.title).joined(separator: ", ")).",
+                style: .footnote
+            )
+            label.textColor = .systemOrange
+            content.addArrangedSubview(label)
+        }
         let favorite = ExtensionUI.secondaryButton(environment.isFavorite(document) ? "Remove Favorite" : "Add Favorite", action: UIAction { [weak self] _ in
             guard let self else { return }
             self.environment.toggleFavorite(self.document)
@@ -338,7 +404,7 @@ final class PresetDetailViewController: UIViewController {
         collectionsButton.setTitle("Collections", for: .normal)
         collectionsButton.menu = collectionsMenu()
         collectionsButton.showsMenuAsPrimaryAction = true
-        content.addArrangedSubview(apply)
+        content.addArrangedSubview(applyButton)
         content.addArrangedSubview(favorite)
         content.addArrangedSubview(collectionsButton)
         content.addArrangedSubview(ExtensionUI.label("Used \(environment.usageCount(document)) time(s).", style: .footnote))
@@ -374,20 +440,116 @@ final class PresetDetailViewController: UIViewController {
         ExtensionUI.alert(title: "Preset Changes", message: message, from: self)
     }
 
-    private func applyPreset() {
-        let target = workingDocument.targets.first ?? ""
-        let controller: UIViewController
-        switch target {
-        case "speed.remap": controller = SpeedRemapStudioViewController(initialPreset: workingDocument)
-        case "easing.curve": controller = EasingCurveViewController(initialPreset: workingDocument)
-        case "camera.shake": controller = CameraShakeViewController(initialPreset: workingDocument)
-        case "color.palette": controller = ColorPaletteViewController(initialPreset: workingDocument)
-        default:
-            ExtensionUI.alert(title: "No application adapter", message: "This preset is valid, but target \(target) does not yet have a runtime adapter in v2.0.", from: self)
+    private func beginApplyPreset() {
+        guard !isApplying else { return }
+        let candidates = PresetApplicationResolver.candidates(for: workingDocument)
+
+        if let applicationContext {
+            guard let candidate = candidates.first(where: { $0.targetID == applicationContext.candidate.targetID }) else {
+                ExtensionUI.alert(
+                    title: "Preset is not compatible",
+                    message: "This preset cannot be applied to \(applicationContext.candidate.title).",
+                    from: self
+                )
+                return
+            }
+            confirmApply(candidate)
             return
         }
-        environment.recordUse(document)
-        navigationController?.pushViewController(controller, animated: true)
+
+        guard !candidates.isEmpty else {
+            ExtensionUI.alert(
+                title: "No application adapter",
+                message: PresetApplicationResolutionError.noSupportedTarget.localizedDescription,
+                from: self
+            )
+            return
+        }
+
+        if candidates.count == 1, let candidate = candidates.first {
+            confirmApply(candidate)
+            return
+        }
+
+        let sheet = UIAlertController(
+            title: "Apply Preset",
+            message: "Choose the compatible tool that should receive this preset.",
+            preferredStyle: .actionSheet
+        )
+        for candidate in candidates {
+            sheet.addAction(UIAlertAction(title: candidate.title, style: .default) { [weak self] _ in
+                self?.confirmApply(candidate)
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = applyButton
+            popover.sourceRect = applyButton.bounds
+        }
+        present(sheet, animated: true)
+    }
+
+    private func confirmApply(_ candidate: PresetApplicationCandidate) {
+        let changedParameterCount = PresetDiff.compare(document, workingDocument).entries.count
+        let parameterSummary = workingDocument.parameters.isEmpty
+            ? "No parameter values are included."
+            : "\(workingDocument.parameters.count) parameter value(s) will be applied."
+        let macroSummary = changedParameterCount == 0
+            ? "No unsaved macro changes."
+            : "\(changedParameterCount) macro-adjusted change(s) are included."
+        let alert = UIAlertController(
+            title: "Apply to \(candidate.title)?",
+            message: "\(parameterSummary)\n\(macroSummary)",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Apply", style: .default) { [weak self] _ in
+            self?.performApply(candidate)
+        })
+        present(alert, animated: true)
+    }
+
+    private func performApply(_ candidate: PresetApplicationCandidate) {
+        guard !isApplying else { return }
+        isApplying = true
+        applyButton.isEnabled = false
+
+        do {
+            _ = try PresetApplicationResolver.resolve(
+                document: workingDocument,
+                requestedTarget: candidate.targetID
+            )
+
+            if let applicationContext {
+                guard applicationContext.candidate.targetID == candidate.targetID else {
+                    throw PresetApplicationResolutionError.targetNotDeclared(applicationContext.candidate.targetID)
+                }
+                try applicationContext.apply(workingDocument)
+                environment.recordUse(document)
+                try applicationContext.returnToSource(from: self)
+                return
+            }
+
+            let controller = try makeToolController(for: candidate)
+            environment.recordUse(document)
+            navigationController?.pushViewController(controller, animated: true)
+            isApplying = false
+            rebuild()
+        } catch {
+            isApplying = false
+            rebuild()
+            ExtensionUI.alert(title: "Preset could not be applied", message: error.localizedDescription, from: self)
+        }
+    }
+
+    private func makeToolController(for candidate: PresetApplicationCandidate) throws -> UIViewController {
+        switch candidate.targetID {
+        case "speed.remap": return SpeedRemapStudioViewController(initialPreset: workingDocument)
+        case "easing.curve": return EasingCurveViewController(initialPreset: workingDocument)
+        case "camera.shake": return CameraShakeViewController(initialPreset: workingDocument)
+        case "color.palette": return ColorPaletteViewController(initialPreset: workingDocument)
+        default: throw PresetApplicationResolutionError.unsupportedTarget(candidate.targetID)
+        }
     }
 
     private func collectionsMenu() -> UIMenu {

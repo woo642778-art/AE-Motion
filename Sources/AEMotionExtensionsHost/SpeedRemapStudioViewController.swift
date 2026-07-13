@@ -101,7 +101,7 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
             self?.saveCurrentPreset()
         })
         let openPresets = ExtensionUI.secondaryButton("Open Preset Studio", action: UIAction { [weak self] _ in
-            self?.navigationController?.pushViewController(PresetLibraryViewController(), animated: true)
+            self?.openPresetStudio()
         })
 
         pageScrollView = ExtensionUI.installScrollStack(ExtensionUI.stack([
@@ -211,15 +211,39 @@ final class SpeedRemapStudioViewController: UIViewController, UITableViewDataSou
     }
 
 
+    private func openPresetStudio() {
+        let context = PresetApplicationContext(
+            targetID: "speed.remap",
+            title: "Speed Remap",
+            adapterID: "adapter.speed-remap.v1",
+            sourceViewController: self
+        ) { [weak self] document in
+            guard let self else { throw PresetApplicationHostError.sourceUnavailable }
+            try self.applyPresetFromStudio(document)
+        }
+        navigationController?.pushViewController(
+            PresetLibraryViewController(applicationContext: context),
+            animated: true
+        )
+    }
+
     private func applyPreset(_ document: PresetDocument) {
         do {
-            keyframes = try SpeedPresetAdapter.keyframes(from: document, duration: max(0.5, sourceDuration))
-            activePreset = document
-            refresh()
-            status.text = "Applied preset: \(document.name)"
+            try applyPresetFromStudio(document)
         } catch {
             ExtensionUI.alert(title: "Preset could not be applied", message: error.localizedDescription, from: self)
         }
+    }
+
+    private func applyPresetFromStudio(_ document: PresetDocument) throws {
+        let resolved = try SpeedPresetAdapter.keyframes(
+            from: document,
+            duration: max(0.5, sourceDuration)
+        )
+        keyframes = resolved
+        activePreset = document
+        refresh()
+        status.text = "Applied preset: \(document.name)"
     }
 
     private func saveCurrentPreset() {
