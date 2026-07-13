@@ -46,3 +46,11 @@ public enum ToolPlacementRegistry {
             .map(\.id)
     }
 }
+
+/// Determines which Objective-C collection view callbacks are safe to forward
+/// without translating an index path first.
+public enum CollectionProxyForwardingPolicy {
+    public static func mayForward(selectorName: String) -> Bool {
+        selectorName.range(of: "indexpath", options: .caseInsensitive) == nil
+    }
+}

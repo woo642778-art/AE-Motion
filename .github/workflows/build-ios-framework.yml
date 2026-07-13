@@ -20,6 +20,8 @@ jobs:
         run: python3 scripts/test-ui-integration-contract.py
       - name: Verify category proxy Swift 6 isolation
         run: python3 scripts/test-category-collection-proxy-isolation.py
+      - name: Verify category proxy index-path forwarding
+        run: python3 scripts/test-category-proxy-indexpath-forwarding.py
       - name: Build iOS framework
         run: ./scripts/build-ios-framework.sh
       - name: Collect products

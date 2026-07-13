@@ -105,3 +105,36 @@ extension CoreTests {
         XCTAssertFalse(ToolPlacementRegistry.contextualToolIDs.contains("host.diagnostics"))
     }
 }
+
+extension CoreTests {
+    func testCategoryProxyDoesNotForwardUnknownIndexPathSelectors() {
+        XCTAssertFalse(
+            CollectionProxyForwardingPolicy.mayForward(
+                selectorName: "collectionView:willDisplayCell:forItemAtIndexPath:"
+            )
+        )
+        XCTAssertFalse(
+            CollectionProxyForwardingPolicy.mayForward(
+                selectorName: "collectionView:didEndDisplayingCell:forItemAtIndexPath:"
+            )
+        )
+        XCTAssertFalse(
+            CollectionProxyForwardingPolicy.mayForward(
+                selectorName: "collectionView:contextMenuConfigurationForItemAtIndexPath:point:"
+            )
+        )
+    }
+
+    func testCategoryProxyMayForwardSelectorsWithoutIndexPaths() {
+        XCTAssertTrue(
+            CollectionProxyForwardingPolicy.mayForward(
+                selectorName: "scrollViewDidScroll:"
+            )
+        )
+        XCTAssertTrue(
+            CollectionProxyForwardingPolicy.mayForward(
+                selectorName: "collectionView:layout:minimumLineSpacingForSectionAtIndex:"
+            )
+        )
+    }
+}

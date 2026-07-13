@@ -139,13 +139,17 @@ final class CategoryCollectionProxy: NSObject, UICollectionViewDataSource, UICol
         return section == insertionSection ? count + 1 : count
     }
 
+    private func isSyntheticPath(_ path: IndexPath) -> Bool {
+        path.section == insertionSection && path.item == insertionItem
+    }
+
     private func originalPath(_ path: IndexPath) -> IndexPath {
         guard path.section == insertionSection, path.item > insertionItem else { return path }
         return IndexPath(item: path.item - 1, section: path.section)
     }
 
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        if indexPath.section == insertionSection && indexPath.item == insertionItem {
+        if isSyntheticPath(indexPath) {
             return collectionView.dequeueReusableCell(
                 withReuseIdentifier: ExtensionsCategoryCell.reuse,
                 for: indexPath
@@ -157,7 +161,7 @@ final class CategoryCollectionProxy: NSObject, UICollectionViewDataSource, UICol
 
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        if indexPath.section == insertionSection && indexPath.item == insertionItem {
+        if isSyntheticPath(indexPath) {
             guard let presenter else { return }
             let navigation = UINavigationController(rootViewController: ExtensionsViewController(style: .insetGrouped))
             navigation.modalPresentationStyle = .pageSheet
@@ -183,15 +187,100 @@ final class CategoryCollectionProxy: NSObject, UICollectionViewDataSource, UICol
         return CGSize(width: max(120, collectionView.bounds.width - 32), height: 64)
     }
 
+    func collectionView(
+        _ collectionView: UICollectionView,
+        willDisplay cell: UICollectionViewCell,
+        forItemAt indexPath: IndexPath
+    ) {
+        guard !isSyntheticPath(indexPath) else { return }
+        originalDelegate?.collectionView?(
+            collectionView,
+            willDisplay: cell,
+            forItemAt: originalPath(indexPath)
+        )
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        didEndDisplaying cell: UICollectionViewCell,
+        forItemAt indexPath: IndexPath
+    ) {
+        guard !isSyntheticPath(indexPath) else { return }
+        originalDelegate?.collectionView?(
+            collectionView,
+            didEndDisplaying: cell,
+            forItemAt: originalPath(indexPath)
+        )
+    }
+
+    func collectionView(_ collectionView: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
+        if isSyntheticPath(indexPath) { return true }
+        return originalDelegate?.collectionView?(
+            collectionView,
+            shouldHighlightItemAt: originalPath(indexPath)
+        ) ?? true
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didHighlightItemAt indexPath: IndexPath) {
+        guard !isSyntheticPath(indexPath) else { return }
+        originalDelegate?.collectionView?(
+            collectionView,
+            didHighlightItemAt: originalPath(indexPath)
+        )
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didUnhighlightItemAt indexPath: IndexPath) {
+        guard !isSyntheticPath(indexPath) else { return }
+        originalDelegate?.collectionView?(
+            collectionView,
+            didUnhighlightItemAt: originalPath(indexPath)
+        )
+    }
+
+    func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
+        if isSyntheticPath(indexPath) { return true }
+        return originalDelegate?.collectionView?(
+            collectionView,
+            shouldSelectItemAt: originalPath(indexPath)
+        ) ?? true
+    }
+
+    func collectionView(_ collectionView: UICollectionView, shouldDeselectItemAt indexPath: IndexPath) -> Bool {
+        if isSyntheticPath(indexPath) { return true }
+        return originalDelegate?.collectionView?(
+            collectionView,
+            shouldDeselectItemAt: originalPath(indexPath)
+        ) ?? true
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didDeselectItemAt indexPath: IndexPath) {
+        guard !isSyntheticPath(indexPath) else { return }
+        originalDelegate?.collectionView?(
+            collectionView,
+            didDeselectItemAt: originalPath(indexPath)
+        )
+    }
+
     override nonisolated func responds(to selector: Selector!) -> Bool {
+        if super.responds(to: selector) { return true }
+
+        let selectorName = NSStringFromSelector(selector)
+        guard CollectionProxyForwardingPolicy.mayForward(selectorName: selectorName) else {
+            return false
+        }
+
         let dataSource = originalDataSource
         let delegate = originalDelegate
-        return super.responds(to: selector)
-            || dataSource?.responds(to: selector) == true
+        return dataSource?.responds(to: selector) == true
             || delegate?.responds(to: selector) == true
     }
 
     override nonisolated func forwardingTarget(for selector: Selector!) -> Any? {
+        let selectorName = NSStringFromSelector(selector)
+        guard CollectionProxyForwardingPolicy.mayForward(selectorName: selectorName) else {
+            return super.forwardingTarget(for: selector)
+        }
+
         let delegate = originalDelegate
         if delegate?.responds(to: selector) == true { return delegate }
 
