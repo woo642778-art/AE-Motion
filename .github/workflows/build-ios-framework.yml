@@ -18,6 +18,8 @@ jobs:
         run: python3 scripts/test-preset-application-host-error-isolation.py
       - name: Verify native UI integration contract
         run: python3 scripts/test-ui-integration-contract.py
+      - name: Verify category proxy Swift 6 isolation
+        run: python3 scripts/test-category-collection-proxy-isolation.py
       - name: Build iOS framework
         run: ./scripts/build-ios-framework.sh
       - name: Collect products

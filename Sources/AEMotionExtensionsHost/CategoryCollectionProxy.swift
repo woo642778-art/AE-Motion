@@ -79,8 +79,8 @@ final class ExtensionsCategoryCell: UICollectionViewCell {
 
 @MainActor
 final class CategoryCollectionProxy: NSObject, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
-    weak var originalDataSource: UICollectionViewDataSource?
-    weak var originalDelegate: UICollectionViewDelegate?
+    nonisolated(unsafe) weak var originalDataSource: UICollectionViewDataSource?
+    nonisolated(unsafe) weak var originalDelegate: UICollectionViewDelegate?
     weak var presenter: UIViewController?
     private weak var collectionView: UICollectionView?
     private var insertionSection = 0
@@ -183,15 +183,21 @@ final class CategoryCollectionProxy: NSObject, UICollectionViewDataSource, UICol
         return CGSize(width: max(120, collectionView.bounds.width - 32), height: 64)
     }
 
-    override func responds(to selector: Selector!) -> Bool {
-        super.responds(to: selector)
-            || originalDataSource?.responds(to: selector) == true
-            || originalDelegate?.responds(to: selector) == true
+    override nonisolated func responds(to selector: Selector!) -> Bool {
+        let dataSource = originalDataSource
+        let delegate = originalDelegate
+        return super.responds(to: selector)
+            || dataSource?.responds(to: selector) == true
+            || delegate?.responds(to: selector) == true
     }
 
-    override func forwardingTarget(for selector: Selector!) -> Any? {
-        if originalDelegate?.responds(to: selector) == true { return originalDelegate }
-        if originalDataSource?.responds(to: selector) == true { return originalDataSource }
+    override nonisolated func forwardingTarget(for selector: Selector!) -> Any? {
+        let delegate = originalDelegate
+        if delegate?.responds(to: selector) == true { return delegate }
+
+        let dataSource = originalDataSource
+        if dataSource?.responds(to: selector) == true { return dataSource }
+
         return super.forwardingTarget(for: selector)
     }
 }
