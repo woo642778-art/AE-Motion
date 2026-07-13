@@ -12,6 +12,7 @@ proxy = PROXY.read_text(encoding='utf-8')
 tests = TESTS.read_text(encoding='utf-8')
 
 checks = {
+    'host imports core forwarding policy': r'import\s+AEMotionExtensionsCore',
     'forwarding policy exists': r'public\s+enum\s+CollectionProxyForwardingPolicy',
     'policy rejects index-path selectors': r'range\(of:\s*"indexpath"\s*,\s*options:\s*\.caseInsensitive\)\s*==\s*nil',
     'proxy has synthetic path detector': r'private\s+func\s+isSyntheticPath\s*\(',
