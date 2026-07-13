@@ -14,6 +14,8 @@ jobs:
         run: swift test
       - name: Run effect metadata tests
         run: python3 scripts/test-normalize-effect-search-metadata.py -v
+      - name: Verify Swift 6 preset error isolation
+        run: python3 scripts/test-preset-application-host-error-isolation.py
       - name: Build iOS framework
         run: ./scripts/build-ios-framework.sh
       - name: Collect products

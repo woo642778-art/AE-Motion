@@ -2,7 +2,6 @@
 import UIKit
 import AEMotionExtensionsCore
 
-@MainActor
 enum PresetApplicationHostError: Error, LocalizedError {
     case sourceUnavailable
     case navigationUnavailable
