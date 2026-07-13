@@ -29,6 +29,8 @@ final class PresetLibraryViewController: UITableViewController, UISearchResultsU
     override func viewDidLoad() {
         super.viewDidLoad()
         title = applicationContext.map { "Presets · \($0.candidate.title)" } ?? "Preset Studio"
+        AEMotionTheme.apply(to: self)
+        AEMotionTheme.apply(to: tableView)
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "preset")
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 76
@@ -195,7 +197,11 @@ final class PresetLibraryViewController: UITableViewController, UISearchResultsU
         let emptyMessage = applicationContext == nil
             ? "No presets match the current filter."
             : "No compatible presets match the current filter."
-        tableView.backgroundView = documents.isEmpty ? emptyLabel(emptyMessage) : nil
+        tableView.backgroundView = documents.isEmpty ? AEMotionTheme.emptyState(
+            title: applicationContext == nil ? "No presets found" : "No compatible presets",
+            message: emptyMessage,
+            systemImage: "slider.horizontal.3"
+        ) : nil
         tableView.tableHeaderView = environment.loadIssues.isEmpty ? nil : issueHeader(environment.loadIssues)
         rebuildNavigationActions()
     }

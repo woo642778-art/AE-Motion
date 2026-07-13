@@ -149,14 +149,14 @@ final class PresetLibraryEnvironment {
 
     func runtimeContext() -> PresetRuntimeContext {
         PresetRuntimeContext(
-            appVersion: "2.0.0",
+            appVersion: "2.0.2",
             iOSVersion: UIDevice.current.systemVersion,
             availableTargets: ["speed.remap", "easing.curve", "camera.shake", "color.palette", "text.animator", "effect.generic", "template.editable"],
             availableFonts: Set(UIFont.familyNames),
             availableEffects: nil,
             availableMedia: nil,
             availableModels: nil,
-            availableFeatures: ["preset.xml.1", "macro.controls", "resource.hub"]
+            availableFeatures: ["preset.xml.1", "macro.controls", "resource.hub", "native.ui.theme", "contextual.tool.placement", "effect-picker.empty-state"]
         )
     }
 

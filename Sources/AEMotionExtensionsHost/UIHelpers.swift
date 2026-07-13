@@ -7,9 +7,10 @@ enum ExtensionUI {
         let field = UITextField()
         field.placeholder = placeholder
         field.text = value
-        field.borderStyle = .roundedRect
         field.keyboardType = .numbersAndPunctuation
         field.clearButtonMode = .whileEditing
+        field.adjustsFontForContentSizeCategory = true
+        AEMotionTheme.style(field: field)
         return field
     }
 
@@ -18,23 +19,25 @@ enum ExtensionUI {
         label.text = text
         label.font = .preferredFont(forTextStyle: style)
         label.numberOfLines = 0
+        label.textColor = AEMotionTheme.primaryText
+        label.adjustsFontForContentSizeCategory = true
         return label
     }
 
     static func button(_ title: String, action: UIAction) -> UIButton {
         let button = UIButton(type: .system, primaryAction: action)
-        var configuration = UIButton.Configuration.filled()
-        configuration.title = title
-        configuration.cornerStyle = .medium
+        AEMotionTheme.style(primary: button)
+        var configuration = button.configuration
+        configuration?.title = title
         button.configuration = configuration
         return button
     }
 
     static func secondaryButton(_ title: String, action: UIAction) -> UIButton {
         let button = UIButton(type: .system, primaryAction: action)
-        var configuration = UIButton.Configuration.tinted()
-        configuration.title = title
-        configuration.cornerStyle = .medium
+        AEMotionTheme.style(secondary: button)
+        var configuration = button.configuration
+        configuration?.title = title
         button.configuration = configuration
         return button
     }
@@ -69,7 +72,9 @@ enum ExtensionUI {
 
     @discardableResult
     static func installScrollStack(_ stack: UIStackView, in controller: UIViewController) -> UIScrollView {
+        AEMotionTheme.apply(to: controller)
         let scroll = UIScrollView()
+        AEMotionTheme.apply(to: scroll)
         scroll.alwaysBounceVertical = true
         scroll.keyboardDismissMode = .interactive
         scroll.delaysContentTouches = false
@@ -77,16 +82,17 @@ enum ExtensionUI {
         scroll.translatesAutoresizingMaskIntoConstraints = false
         controller.view.addSubview(scroll)
         scroll.addSubview(stack)
+        AEMotionTheme.styleControls(in: stack)
         NSLayoutConstraint.activate([
             scroll.leadingAnchor.constraint(equalTo: controller.view.safeAreaLayoutGuide.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: controller.view.safeAreaLayoutGuide.trailingAnchor),
             scroll.topAnchor.constraint(equalTo: controller.view.safeAreaLayoutGuide.topAnchor),
             scroll.bottomAnchor.constraint(equalTo: controller.view.bottomAnchor),
-            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -20),
-            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 20),
+            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: AEMotionTheme.horizontalMargin),
+            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -AEMotionTheme.horizontalMargin),
+            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: AEMotionTheme.sectionSpacing),
             stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -24),
-            stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -40),
+            stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -(AEMotionTheme.horizontalMargin * 2)),
         ])
         return scroll
     }
@@ -126,8 +132,8 @@ final class CurveGraphView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .secondarySystemBackground
-        layer.cornerRadius = 12
+        backgroundColor = AEMotionTheme.surface
+        layer.cornerRadius = AEMotionTheme.cornerRadius
         layer.masksToBounds = true
     }
 
@@ -158,7 +164,7 @@ final class CurveGraphView: UIView {
         context.addLine(to: CGPoint(x: inset.maxX, y: zeroY))
         context.strokePath()
 
-        context.setStrokeColor(UIColor.systemBlue.cgColor)
+        context.setStrokeColor(AEMotionTheme.accent.cgColor)
         context.setLineWidth(2.5)
         context.setLineJoin(.round)
         context.setLineCap(.round)

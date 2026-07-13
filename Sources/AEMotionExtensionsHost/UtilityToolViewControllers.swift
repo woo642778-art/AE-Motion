@@ -434,6 +434,8 @@ final class ExpressionHelperViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Expression Helper"
+        AEMotionTheme.apply(to: self)
+        AEMotionTheme.apply(to: tableView)
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "expression")
     }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { items.count }
@@ -444,8 +446,11 @@ final class ExpressionHelperViewController: UITableViewController {
         config.text = item.key
         config.secondaryText = item.value
         config.secondaryTextProperties.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        config.textProperties.color = AEMotionTheme.primaryText
+        config.secondaryTextProperties.color = AEMotionTheme.secondaryText
         cell.contentConfiguration = config
         cell.accessoryType = .detailButton
+        AEMotionTheme.configure(cell: cell, iconName: "function")
         return cell
     }
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {

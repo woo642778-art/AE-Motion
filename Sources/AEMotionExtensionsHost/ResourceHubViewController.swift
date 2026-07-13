@@ -40,6 +40,8 @@ final class ResourceHubViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Resource Hub"
+        AEMotionTheme.apply(to: self)
+        AEMotionTheme.apply(to: tableView)
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "resource")
     }
 
@@ -54,8 +56,12 @@ final class ResourceHubViewController: UITableViewController {
         configuration.text = resource.title
         configuration.secondaryText = resource.subtitle
         configuration.image = UIImage(systemName: "link")
+        configuration.textProperties.color = AEMotionTheme.primaryText
+        configuration.secondaryTextProperties.color = AEMotionTheme.secondaryText
+        configuration.imageProperties.tintColor = AEMotionTheme.accent
         cell.contentConfiguration = configuration
         cell.accessoryType = .disclosureIndicator
+        AEMotionTheme.configure(cell: cell, iconName: nil)
         return cell
     }
 

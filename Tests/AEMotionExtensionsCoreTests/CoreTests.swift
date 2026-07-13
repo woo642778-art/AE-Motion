@@ -86,3 +86,22 @@ final class CoreTests: XCTestCase {
     }
 
 }
+
+extension CoreTests {
+    func testToolPlacementRegistryDistributesEditingToolsOutsideExtensionsHub() {
+        XCTAssertEqual(ToolPlacementRegistry.placement(for: "speed.remap"), .timeline)
+        XCTAssertEqual(ToolPlacementRegistry.placement(for: "easing.curve"), .graph)
+        XCTAssertEqual(ToolPlacementRegistry.placement(for: "cutout.person"), .layer)
+        XCTAssertEqual(ToolPlacementRegistry.placement(for: "depth.map"), .viewer)
+        XCTAssertEqual(ToolPlacementRegistry.placement(for: "dead.frames"), .clip)
+        XCTAssertEqual(ToolPlacementRegistry.placement(for: "camera.shake"), .layer)
+        XCTAssertEqual(ToolPlacementRegistry.placement(for: "color.palette"), .color)
+    }
+
+    func testToolPlacementRegistryKeepsGlobalUtilitiesInHub() {
+        XCTAssertEqual(ToolPlacementRegistry.placement(for: "resource.hub"), .extensionsHub)
+        XCTAssertEqual(ToolPlacementRegistry.placement(for: "host.diagnostics"), .extensionsHub)
+        XCTAssertTrue(ToolPlacementRegistry.contextualToolIDs.contains("speed.remap"))
+        XCTAssertFalse(ToolPlacementRegistry.contextualToolIDs.contains("host.diagnostics"))
+    }
+}
