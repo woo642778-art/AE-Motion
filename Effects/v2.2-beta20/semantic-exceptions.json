@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "effects": {
+    "com.alightcreative.effects.bbmaker": {
+      "allowedFindings": ["intentional_bars_non_neutral"],
+      "requiredNeutralDefaults": {"amount": 0.0}
+    }
+  }
+}
