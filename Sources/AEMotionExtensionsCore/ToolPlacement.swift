@@ -6,8 +6,9 @@ public enum ToolPlacement: String, Codable, CaseIterable, Sendable {
 
 public enum ToolPlacementRegistry {
     private static let placements: [String: ToolPlacement] = [
-        "speed.remap": .timeline, "easing.curve": .graph, "cutout.person": .layer, "depth.map": .viewer,
-        "dead.frames": .clip, "camera.shake": .layer, "color.palette": .color, "preset.library": .project,
+        "speed.remap": .timeline, "easing.curve": .graph, "animation.core": .graph,
+        "cutout.person": .layer, "depth.map": .viewer, "dead.frames": .clip,
+        "camera.shake": .layer, "color.palette": .color, "preset.library": .project,
         "resource.hub": .extensionsHub, "host.diagnostics": .extensionsHub, "effects.integrity": .extensionsHub,
         "project.reliability": .project, "random.values": .extensionsHub, "expression.helper": .extensionsHub,
         "bpm.frames": .extensionsHub, "layer.offset": .extensionsHub,
