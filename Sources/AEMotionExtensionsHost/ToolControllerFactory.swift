@@ -27,7 +27,11 @@ enum ToolControllerFactory {
     }
 
     static func descriptor(for toolID: String) -> ToolDescriptor? {
-        ToolRegistry.all.first { $0.id == toolID }
+        let placement = ToolPlacementRegistry.placement(for: toolID)
+        guard placement == .extensionsHub || toolID == "preset.library" || toolID == "project.reliability" else {
+            return nil
+        }
+        return ToolRegistry.all.first { $0.id == toolID }
     }
 
     static func present(_ toolID: String, from presenter: UIViewController) {
