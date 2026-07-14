@@ -4,26 +4,38 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import importlib.util
 import json
 import re
 import shutil
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
 KNOWN_REPAIRS = {
     "com.alightcreative.effects.bccedgeglow": "bccedgeglow.xml",
+    "com.alightcreative.effects.bbmaker": "blackbars.xml",
 }
 LARGE_LOOP_RE = re.compile(r"for\s*\([^;]*;\s*[^;]*(?:<=|<)\s*(?:128|192|256|512)(?:\.0)?", re.I)
 ATTR_RE = re.compile(r"(?P<name>[A-Za-z_:][\w:.-]*)\s*=\s*(?P<quote>['\"])(?P<value>.*?)(?P=quote)", re.S)
 EFFECT_RE = re.compile(r"<effect\b(?P<attrs>[^>]*)>", re.I | re.S)
 SHADER_RE = re.compile(r"<shader\b[^>]*>(?P<body>.*?)</shader>", re.I | re.S)
+_VISUAL_MODULE = None
+DEVICE_GATED_VISUAL_CODES = {
+    "fixed_opaque_alpha",
+    "unbounded_texture_coordinates",
+    "zero_permitted_divisor",
+    "aspect_ratio_bounds_uncertain",
+}
+
 
 @dataclass(frozen=True)
 class RuntimeFinding:
     code: str
     severity: str
     message: str
+
 
 @dataclass(frozen=True)
 class RuntimeRecord:
@@ -41,6 +53,20 @@ def attrs(tag: str) -> dict[str, str]:
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def visual_module():
+    global _VISUAL_MODULE
+    if _VISUAL_MODULE is None:
+        path = Path(__file__).with_name("effect-visual-qualification.py")
+        spec = importlib.util.spec_from_file_location("aemotion_visual_qualification", path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("Unable to load visual qualification module")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        _VISUAL_MODULE = module
+    return _VISUAL_MODULE
 
 
 def analyze(path: Path) -> tuple[str, list[RuntimeFinding]]:
@@ -99,6 +125,13 @@ def analyze(path: Path) -> tuple[str, list[RuntimeFinding]]:
         except ValueError:
             findings.append(RuntimeFinding("invalid_numeric_parameter", "error", f"{element.attrib.get('id', '?')} has malformed numeric metadata."))
 
+    for visual in visual_module().analyze_descriptor_text(text):
+        code = str(visual.get("code", "visual_risk"))
+        severity = "warning" if code in DEVICE_GATED_VISUAL_CODES else "error" if visual.get("confidence") == "high" else "warning"
+        message = str(visual.get("message", "Visual qualification requires review."))
+        if not any(item.code == code for item in findings):
+            findings.append(RuntimeFinding(code, severity, message))
+
     return effect_id, findings
 
 
@@ -144,8 +177,8 @@ def repair_and_quarantine(app: Path, repair_dir: Path, manifest_path: Path) -> d
         records.append(RuntimeRecord(effect_id, path.name, "quarantined", before, None, [asdict(x) for x in findings]))
 
     result = {
-        "schemaVersion": 1,
-        "release": "v2.2-beta18",
+        "schemaVersion": 2,
+        "release": "v2.2-beta19",
         "repaired": sum(record.action == "repaired" for record in records),
         "quarantined": sum(record.action == "quarantined" for record in records),
         "records": [asdict(record) for record in records],
@@ -164,6 +197,7 @@ def main() -> int:
     result = repair_and_quarantine(args.app.resolve(), args.repairs.resolve(), args.manifest.resolve())
     print(f"Repaired {result['repaired']} and quarantined {result['quarantined']} runtime-risk effects.")
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

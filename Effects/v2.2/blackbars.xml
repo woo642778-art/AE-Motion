@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<effect id="com.alightcreative.effects.bbmaker"
+        name="BlackBar Maker+"
+        desc="Stable full-frame black bars with angle, color, custom bounds and feather controls"
+        category="drawing"
+        tags="drawing,blackbar,black bars,letterbox,maker,bbmaker,repaired,stable"
+        thumb="thumb/SKEXNXX/BB.webp"
+        experimental="false" deprecated="false">
+    <params>
+        <texture id="inputImg" srcType="content"/>
+        <spinner id="start" default="20.0" min="0.0" max="49.0" step="0.15" label="Amount" type="percent"/>
+        <spinner id="angle" default="90.0" min="-720.0" max="720.0" step="1" label="Angle" type="angle" ticks="0,45,90,135,180,225,270,315,360" snap="0,45,90,135,180,225,270,315,360"/>
+        <section text="Blackbar Option"/>
+        <color id="colorbg" default="#000000FF" label="Color BG" alpha="true"/>
+        <spinner id="startA" default="0.0" min="-0.5" max="1.5" step="0.001" label="@am:string/effect_param_start" type="percent"/>
+        <spinner id="endA" default="1.0" min="-0.5" max="1.5" step="0.001" label="@am:string/effect_param_end" type="percent"/>
+        <spinner id="angleA" default="0.0" min="-720.0" max="720.0" label="@am:string/effect_param_angle" type="angle" step="0.5" ticks="0,45,90,135,180,225,270,315,360" snap="45,90,135"/>
+        <spinner id="featherA" default="0.0" min="0.0" max="100.0" step="0.1" label="@am:string/effect_param_feather"/>
+    </params>
+    <shader type="fragment" precision="high"><![CDATA[
+        void main() {
+            vec2 uv = clamp(acScreenNorm.st, 0.0, 1.0);
+            vec4 source = texture2DCv(inputImg.texture, uv);
+            float amount = clamp(start / 100.0, 0.0, 0.49);
+            float useCustomBounds = step(0.0001, abs(startA) + abs(endA - 1.0));
+            float low = mix(amount, min(startA, endA), useCustomBounds);
+            float high = mix(1.0 - amount, max(startA, endA), useCustomBounds);
+            low = clamp(low, -0.5, 1.5);
+            high = clamp(high, -0.5, 1.5);
+            float useCustomAngle = step(0.0001, abs(angleA));
+            float degrees = mix(angle, angleA, useCustomAngle);
+            float radians = degrees * 0.01745329252;
+            vec2 direction = normalize(vec2(cos(radians), -sin(radians)));
+            float position = dot(acLayerNorm.st - vec2(0.5), direction) + 0.5;
+            float feather = max(featherA / 100.0, 0.00001);
+            float insideStart = smoothstep(low - feather, low + feather, position);
+            float insideEnd = 1.0 - smoothstep(high - feather, high + feather, position);
+            float inside = clamp(insideStart * insideEnd, 0.0, 1.0);
+            float bars = 1.0 - inside;
+            float barAlpha = clamp(colorbg.a * bars, 0.0, 1.0);
+            vec3 outputRGB = mix(source.rgb, colorbg.rgb, barAlpha);
+            float outputAlpha = source.a + barAlpha * (1.0 - source.a);
+            gl_FragColor = vec4(outputRGB, outputAlpha);
+        }
+    ]]></shader>
+</effect>

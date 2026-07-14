@@ -16,16 +16,29 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
     private var recentIDs: [String] = []
     private var query = ""
 
+    private var hubVisibleToolIDs: Set<String> {
+        Set(ToolRegistry.all.compactMap {
+            ToolPlacementRegistry.placement(for: $0.id) == .extensionsHub
+                || $0.id == "preset.library"
+                || $0.id == "project.reliability"
+                ? $0.id : nil
+        })
+    }
+
+    private var hubVisibleTools: [ToolDescriptor] {
+        ToolRegistry.all.filter { hubVisibleToolIDs.contains($0.id) }
+    }
+
     private var visibleSections: [HubSection] {
         if !query.isEmpty {
-            let matches = ToolRegistry.all.filter(matchesQuery)
+            let matches = hubVisibleTools.filter(matchesQuery)
             return matches.isEmpty ? [] : [
                 HubSection(title: "Results", subtitle: nil, toolIDs: matches.map(\.id)),
             ]
         }
 
         var sections: [HubSection] = []
-        let knownIDs = Set(ToolRegistry.all.map(\.id))
+        let knownIDs = hubVisibleToolIDs
         let recent = recentIDs.filter(knownIDs.contains).prefix(5)
         if !recent.isEmpty {
             sections.append(HubSection(
@@ -35,7 +48,7 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
             ))
         }
 
-        let favoriteIDs = ToolRegistry.all.map(\.id).filter(favorites.contains)
+        let favoriteIDs = hubVisibleTools.map(\.id).filter(favorites.contains)
         if !favoriteIDs.isEmpty {
             sections.append(HubSection(
                 title: "Favorites",
@@ -44,21 +57,7 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
             ))
         }
 
-        let editingIDs = ToolRegistry.all
-            .filter {
-                ToolPlacementRegistry.placement(for: $0.id) != .extensionsHub
-                    && $0.id != "preset.library"
-            }
-            .map(\.id)
-        if !editingIDs.isEmpty {
-            sections.append(HubSection(
-                title: "Editing Shortcuts",
-                subtitle: "These tools are also available from contextual AE Motion menus.",
-                toolIDs: editingIDs
-            ))
-        }
-
-        let scripts = ToolRegistry.all
+        let scripts = hubVisibleTools
             .filter { $0.section == .scripts && $0.id != "effects.integrity" }
             .map(\.id)
         if !scripts.isEmpty {
@@ -150,8 +149,8 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
         tableView.backgroundView = AEMotionTheme.emptyState(
             title: query.isEmpty ? "No tools available" : "No matching tools",
             message: query.isEmpty
-                ? "AE Motion tools will appear here when they are available."
-                : "Try a different tool name or task.",
+                ? "Independent AE Motion utilities and diagnostics appear here."
+                : "Try a different utility or diagnostic name.",
             systemImage: query.isEmpty ? "wand.and.stars" : "magnifyingglass"
         )
     }
@@ -231,18 +230,11 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
 
     private func iconName(for id: String) -> String {
         switch id {
-        case "speed.remap": return "speedometer"
-        case "easing.curve": return "chart.xyaxis.line"
-        case "cutout.person": return "person.crop.rectangle"
-        case "depth.map": return "square.3.layers.3d.down.right"
-        case "dead.frames": return "film.stack"
-        case "camera.shake": return "waveform.path"
         case "random.values": return "dice"
         case "expression.helper": return "function"
         case "preset.library": return "slider.horizontal.3"
         case "resource.hub": return "link"
         case "bpm.frames": return "metronome"
-        case "color.palette": return "paintpalette"
         case "layer.offset": return "square.stack.3d.down.right"
         case "effects.integrity": return "checkmark.shield"
         case "project.reliability": return "externaldrive.badge.checkmark"

@@ -3,6 +3,7 @@
         name="BCC Edge Glow"
         desc="Stable single-pass edge glow with source-color, threshold, radius and blend controls"
         category="drawing"
+        thumb="thumb/bccedgeglow.png"
         tags="edge,glow,outline,neon,bcc,bbc,boris,borisfx,continuum,repaired,stable"
         overdraw="true" max-overdraw="0.2" experimental="false" deprecated="false">
     <params>
