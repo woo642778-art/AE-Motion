@@ -58,7 +58,9 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
             ))
         }
 
-        let scripts = ToolRegistry.all.filter { $0.section == .scripts }.map(\.id)
+        let scripts = ToolRegistry.all
+            .filter { $0.section == .scripts && $0.id != "effects.integrity" }
+            .map(\.id)
         if !scripts.isEmpty {
             sections.append(HubSection(title: "Scripts", subtitle: nil, toolIDs: scripts))
         }
@@ -73,7 +75,7 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
             sections.append(HubSection(title: "Resources", subtitle: nil, toolIDs: resources))
         }
 
-        let diagnostics = ["host.diagnostics"].filter(knownIDs.contains)
+        let diagnostics = ["effects.integrity", "host.diagnostics"].filter(knownIDs.contains)
         if !diagnostics.isEmpty {
             sections.append(HubSection(title: "Diagnostics", subtitle: nil, toolIDs: diagnostics))
         }
@@ -242,6 +244,7 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
         case "bpm.frames": return "metronome"
         case "color.palette": return "paintpalette"
         case "layer.offset": return "square.stack.3d.down.right"
+        case "effects.integrity": return "checkmark.shield"
         case "host.diagnostics": return "stethoscope"
         default: return "puzzlepiece.extension"
         }
