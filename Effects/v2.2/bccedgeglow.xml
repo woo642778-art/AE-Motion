@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<effect id="com.alightcreative.effects.bccedgeglow"
+        name="BCC Edge Glow"
+        desc="Stable single-pass edge glow with source-color, threshold, radius and blend controls"
+        category="drawing"
+        tags="edge,glow,outline,neon,bcc,bbc,boris,borisfx,continuum,repaired,stable"
+        overdraw="true" max-overdraw="0.2" experimental="false" deprecated="false">
+    <params>
+        <texture id="inputImg" srcType="content"/>
+        <section text="EDGE DETECTION"/>
+        <spinner id="edgeStrength" label="Edge Strength" default="1.0" min="0.0" max="5.0" step="0.05" type="float"/>
+        <spinner id="edgeThickness" label="Edge Thickness" default="1.0" min="0.5" max="5.0" step="0.1" type="float"/>
+        <spinner id="edgeThreshold" label="Edge Threshold" default="0.1" min="0.0" max="1.0" step="0.01" type="float"/>
+        <spinner id="edgeSoftness" label="Edge Softness" default="0.3" min="0.01" max="1.0" step="0.01" type="float"/>
+        <selector id="edgeType" style="dropdown" default="2" label="Edge Type">
+            <choice label="Luminance" value="1"/>
+            <choice label="Sobel" value="2"/>
+            <choice label="Color" value="3"/>
+        </selector>
+        <section text="GLOW"/>
+        <spinner id="glowAmount" label="Glow Amount" default="1.0" min="0.0" max="5.0" step="0.05" type="float"/>
+        <spinner id="glowRadius" label="Glow Radius" default="8.0" min="0.0" max="40.0" step="0.5" type="float"/>
+        <spinner id="glowFalloff" label="Glow Falloff" default="1.5" min="0.5" max="5.0" step="0.1" type="float"/>
+        <spinner id="innerGlow" label="Inner Glow" default="0.5" min="0.0" max="3.0" step="0.05" type="float"/>
+        <spinner id="innerRadius" label="Inner Radius" default="3.0" min="0.5" max="15.0" step="0.5" type="float"/>
+        <spinner id="innerSoftness" label="Inner Softness" default="0.5" min="0.0" max="1.0" step="0.01" type="float"/>
+        <spinner id="outerGlow" label="Outer Glow" default="1.0" min="0.0" max="3.0" step="0.05" type="float"/>
+        <spinner id="outerSpread" label="Outer Spread" default="1.0" min="0.0" max="3.0" step="0.05" type="float"/>
+        <section text="COLOR"/>
+        <color id="edgeColor" label="Edge Color" default="#00AAFF" alpha="false"/>
+        <spinner id="edgeColorStrength" label="Color Strength" default="1.0" min="0.0" max="1.0" step="0.01" type="float"/>
+        <switch id="useSourceColor" default="false" label="Use Source Color"/>
+        <spinner id="edgeSaturation" label="Edge Saturation" default="1.0" min="0.0" max="3.0" step="0.05" type="float"/>
+        <color id="glowColorCore" label="Core Color" default="#FFFFFF" alpha="false"/>
+        <color id="glowColorMid" label="Mid Color" default="#00AAFF" alpha="false"/>
+        <color id="glowColorOuter" label="Outer Color" default="#0044AA" alpha="false"/>
+        <spinner id="colorMapStrength" label="Color Map Strength" default="0.0" min="0.0" max="1.0" step="0.01" type="float"/>
+        <section text="EDGE MODIFIERS"/>
+        <spinner id="edgeBoost" label="Edge Boost" default="0.0" min="0.0" max="3.0" step="0.05" type="float"/>
+        <spinner id="edgeContrast" label="Edge Contrast" default="0.0" min="-1.0" max="1.0" step="0.01" type="float"/>
+        <spinner id="edgeGamma" label="Edge Gamma" default="1.0" min="0.3" max="3.0" step="0.05" type="float"/>
+        <switch id="edgeInvert" default="false" label="Invert Edges"/>
+        <section text="ANIMATION"/>
+        <spinner id="pulseSpeed" label="Pulse Speed" default="0.0" min="0.0" max="10.0" step="0.1" type="float"/>
+        <spinner id="pulseAmount" label="Pulse Amount" default="0.5" min="0.0" max="1.0" step="0.01" type="float"/>
+        <spinner id="hueRotateSpeed" label="Hue Rotate Speed" default="0.0" min="0.0" max="5.0" step="0.1" type="float"/>
+        <section text="BLEND"/>
+        <selector id="blendMode" style="dropdown" default="1" label="Blend Mode">
+            <choice label="Add" value="1"/>
+            <choice label="Screen" value="2"/>
+            <choice label="Soft Light" value="3"/>
+            <choice label="Replace" value="4"/>
+        </selector>
+        <selector id="quality" style="radio" default="2" label="Quality">
+            <choice label="Low" value="1"/>
+            <choice label="Medium" value="2"/>
+            <choice label="High" value="3"/>
+        </selector>
+        <switch id="edgeOnly" default="false" label="Edge Only"/>
+        <switch id="glowOnly" default="false" label="Glow Only"/>
+        <spinner id="ditherAmt" label="Dither" default="0.003" min="0.0" max="0.03" step="0.001" type="float"/>
+        <spinner id="globalMix" label="Global Mix" default="1.0" min="0.0" max="1.0" step="0.01" type="percent"/>
+    </params>
+    <shader type="fragment" precision="high"><![CDATA[
+        float aeLum(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+        float aeHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+        vec3 aeSaturateColor(vec3 c, float amount) { float l = aeLum(c); return mix(vec3(l), c, amount); }
+        float aeEdgeAt(vec2 uv, vec2 px) {
+            vec3 l = texture2DCv(inputImg.texture, clamp(uv - vec2(px.x, 0.0), 0.0, 1.0)).rgb;
+            vec3 r = texture2DCv(inputImg.texture, clamp(uv + vec2(px.x, 0.0), 0.0, 1.0)).rgb;
+            vec3 t = texture2DCv(inputImg.texture, clamp(uv - vec2(0.0, px.y), 0.0, 1.0)).rgb;
+            vec3 b = texture2DCv(inputImg.texture, clamp(uv + vec2(0.0, px.y), 0.0, 1.0)).rgb;
+            float e;
+            if (float(edgeType) < 1.5) e = abs(aeLum(l) - aeLum(r)) + abs(aeLum(t) - aeLum(b));
+            else if (float(edgeType) < 2.5) { float gx = aeLum(r) - aeLum(l); float gy = aeLum(b) - aeLum(t); e = sqrt(gx * gx + gy * gy) * 2.0; }
+            else e = length(r - l) + length(b - t);
+            e *= edgeStrength;
+            float softness = max(edgeSoftness, 0.01);
+            e = smoothstep(edgeThreshold - softness * 0.5, edgeThreshold + softness * 0.5, e);
+            e = clamp((e - 0.5) * (1.0 + edgeContrast) + 0.5, 0.0, 1.0);
+            e = pow(max(e, 0.0), 1.0 / max(edgeGamma, 0.001));
+            e = min(e * (1.0 + edgeBoost), 1.0);
+            if (edgeInvert) e = 1.0 - e;
+            return e;
+        }
+        vec3 aeBlend(vec3 base, vec3 glow, float mode) {
+            if (mode < 1.5) return base + glow;
+            if (mode < 2.5) return 1.0 - (1.0 - base) * (1.0 - glow);
+            if (mode < 3.5) return (1.0 - 2.0 * glow) * base * base + 2.0 * glow * base;
+            return glow;
+        }
+        void main() {
+            vec2 uv = acScreenNorm;
+            vec4 src = texture2DCv(inputImg.texture, uv);
+            vec2 basePx = 1.0 / getTexSize(inputImg.size);
+            vec2 edgePx = basePx * max(edgeThickness, 0.5);
+            float core = aeEdgeAt(uv, edgePx);
+            float radiusScale = mix(0.55, 1.0, clamp((float(quality) - 1.0) * 0.5, 0.0, 1.0));
+            vec2 glowPx = basePx * max(glowRadius * radiusScale, 0.5);
+            float nearGlow = 0.0;
+            nearGlow += aeEdgeAt(clamp(uv + vec2(glowPx.x, 0.0), 0.0, 1.0), edgePx);
+            nearGlow += aeEdgeAt(clamp(uv - vec2(glowPx.x, 0.0), 0.0, 1.0), edgePx);
+            nearGlow += aeEdgeAt(clamp(uv + vec2(0.0, glowPx.y), 0.0, 1.0), edgePx);
+            nearGlow += aeEdgeAt(clamp(uv - vec2(0.0, glowPx.y), 0.0, 1.0), edgePx);
+            nearGlow *= 0.25;
+            vec2 farPx = glowPx * max(outerSpread, 0.25) * 1.75;
+            float farGlow = 0.0;
+            farGlow += aeEdgeAt(clamp(uv + farPx, 0.0, 1.0), edgePx);
+            farGlow += aeEdgeAt(clamp(uv - farPx, 0.0, 1.0), edgePx);
+            farGlow += aeEdgeAt(clamp(uv + vec2(farPx.x, -farPx.y), 0.0, 1.0), edgePx);
+            farGlow += aeEdgeAt(clamp(uv + vec2(-farPx.x, farPx.y), 0.0, 1.0), edgePx);
+            farGlow *= 0.25;
+            float pulse = 1.0 + sin(acTime * pulseSpeed * 6.2831853) * pulseAmount * 0.25;
+            float glowMask = pow(max(nearGlow, 0.0), max(glowFalloff, 0.1)) * outerGlow;
+            glowMask += core * innerGlow * mix(0.5, 1.0, innerSoftness);
+            glowMask += farGlow * outerGlow * 0.55;
+            glowMask *= glowAmount * pulse;
+            vec3 sourceEdgeColor = aeSaturateColor(src.rgb, edgeSaturation);
+            vec3 selectedEdgeColor = mix(edgeColor.rgb, sourceEdgeColor, useSourceColor ? 1.0 : 0.0);
+            selectedEdgeColor = mix(vec3(1.0), selectedEdgeColor, edgeColorStrength);
+            vec3 mappedColor = mix(glowColorMid.rgb, mix(glowColorCore.rgb, glowColorOuter.rgb, clamp(farGlow, 0.0, 1.0)), colorMapStrength);
+            vec3 edgeRGB = selectedEdgeColor * core;
+            vec3 glowRGB = mappedColor * glowMask;
+            float noise = (aeHash(gl_FragCoord.xy + vec2(acTime * 13.0)) - 0.5) * ditherAmt;
+            vec3 effectRGB = edgeRGB + glowRGB + noise;
+            vec3 result;
+            if (edgeOnly) result = edgeRGB;
+            else if (glowOnly) result = glowRGB;
+            else result = aeBlend(src.rgb, effectRGB, float(blendMode));
+            gl_FragColor = vec4(mix(src.rgb, result, globalMix), src.a);
+        }
+    ]]></shader>
+</effect>
