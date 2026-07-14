@@ -34,13 +34,14 @@ class ThumbnailContractTests(unittest.TestCase):
     def test_missing_or_wrong_case_asset_fails(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             app = Path(raw) / "App.app"
-            (app / "BuiltinEffects").mkdir(parents=True)
-            (app / "BuiltinEffects/bccedgeglow.xml").write_text(
+            effects = app / "BuiltinEffects"
+            effects.mkdir(parents=True)
+            (effects / "bccedgeglow.xml").write_text(
                 '<effect id="com.alightcreative.effects.bccedgeglow" thumb="thumb/bccedgeglow.png"/>',
                 encoding="utf-8",
             )
-            (app / "thumb").mkdir()
-            write_png_header(app / "thumb/BCCEdgeGlow.png", 64, 64)
+            (effects / "thumb").mkdir()
+            write_png_header(effects / "thumb/BCCEdgeGlow.png", 64, 64)
             result = validator.validate_thumbnail_contract(app)
             self.assertFalse(result["valid"])
             self.assertEqual(result["errors"][0]["code"], "missing_case_sensitive_asset")
@@ -48,16 +49,31 @@ class ThumbnailContractTests(unittest.TestCase):
     def test_valid_png_dimensions_pass(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             app = Path(raw) / "App.app"
-            (app / "BuiltinEffects").mkdir(parents=True)
-            (app / "BuiltinEffects/fx.xml").write_text(
+            effects = app / "BuiltinEffects"
+            effects.mkdir(parents=True)
+            (effects / "fx.xml").write_text(
+                '<effect id="com.test.fx" thumb="thumb/fx.png"/>', encoding="utf-8"
+            )
+            (effects / "thumb").mkdir()
+            write_png_header(effects / "thumb/fx.png", 96, 54)
+            result = validator.validate_thumbnail_contract(app)
+            self.assertTrue(result["valid"])
+            self.assertEqual(result["assetRoot"], "BuiltinEffects")
+            self.assertEqual(result["checked"][0]["width"], 96)
+            self.assertEqual(result["checked"][0]["height"], 54)
+
+    def test_app_root_asset_does_not_satisfy_descriptor(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            app = Path(raw) / "App.app"
+            effects = app / "BuiltinEffects"
+            effects.mkdir(parents=True)
+            (effects / "fx.xml").write_text(
                 '<effect id="com.test.fx" thumb="thumb/fx.png"/>', encoding="utf-8"
             )
             (app / "thumb").mkdir()
             write_png_header(app / "thumb/fx.png", 96, 54)
             result = validator.validate_thumbnail_contract(app)
-            self.assertTrue(result["valid"])
-            self.assertEqual(result["checked"][0]["width"], 96)
-            self.assertEqual(result["checked"][0]["height"], 54)
+            self.assertFalse(result["valid"])
 
     def test_unsafe_relative_path_fails(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
