@@ -16,6 +16,7 @@ ICON="${4:-}"
 [[ -f "$FRAMEWORK/AEMotionExtensionsHost" ]] || { echo "Framework executable missing" >&2; exit 66; }
 [[ -z "$ICON" || -f "$ICON" ]] || { echo "Icon source missing" >&2; exit 66; }
 [[ -f "$ROOT/Effects/v2.2/bccedgeglow.xml" ]] || { echo "BCC Edge Glow repair descriptor missing" >&2; exit 66; }
+[[ -f "$ROOT/Effects/v2.2/blackbars.xml" ]] || { echo "Black Bars repair descriptor missing" >&2; exit 66; }
 [[ -f "$ROOT/Effects/v2.2/device-qualification.json" ]] || { echo "Device qualification manifest missing" >&2; exit 66; }
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/aemotion-v22-beta19.XXXXXX")"
@@ -42,19 +43,23 @@ python3 "$ROOT/scripts/effect-runtime-stability.py" "$APP" \
   --repairs "$ROOT/Effects/v2.2" \
   --manifest "$APP/AEMotionDiagnostics/runtime-effect-stability.json"
 
-python3 - "$APP/thumb/bccedgeglow.png" <<'PY'
+python3 - "$APP/BuiltinEffects/thumb/bccedgeglow.png" <<'PY'
 from pathlib import Path
 import math,struct,sys,zlib
 path=Path(sys.argv[1]); path.parent.mkdir(parents=True,exist_ok=True)
-w,h=256,144
+w,h=256,256
 rows=[]
 for y in range(h):
     row=bytearray([0])
     for x in range(w):
         nx=(x-w/2)/(w/2); ny=(y-h/2)/(h/2)
-        edge=math.exp(-((abs(math.hypot(nx*1.25,ny)-0.58)/0.10)**2))
-        glow=math.exp(-((abs(math.hypot(nx*1.25,ny)-0.58)/0.25)**2))*0.7
-        r=int(min(255,10+30*glow+80*edge)); g=int(min(255,16+120*glow+150*edge)); b=int(min(255,28+230*glow+225*edge))
+        radius=math.hypot(nx,ny)
+        edge=math.exp(-((abs(radius-0.52)/0.07)**2))
+        glow=math.exp(-((abs(radius-0.52)/0.22)**2))*0.8
+        grid=0.12 if ((x//24)+(y//24))%2==0 else 0.04
+        r=int(min(255,7+45*glow+100*edge+30*grid))
+        g=int(min(255,12+130*glow+120*edge+25*grid))
+        b=int(min(255,24+230*glow+220*edge+35*grid))
         row.extend((r,g,b,255))
     rows.append(bytes(row))
 def chunk(kind,data):
@@ -64,6 +69,8 @@ path.write_bytes(png)
 PY
 
 python3 "$ROOT/scripts/validate-effect-thumbnails.py" "$APP" \
+  --require-effect-id com.alightcreative.effects.bccedgeglow \
+  --require-effect-id com.alightcreative.effects.bbmaker \
   --output "$APP/AEMotionDiagnostics/effect-thumbnails.json"
 
 INITIAL_REPORT="$APP/AEMotionDiagnostics/initial-effect-integrity.json"
@@ -107,6 +114,7 @@ JSON
 if [[ -n "$ICON" ]]; then
   python3 "$ROOT/scripts/apply-app-branding.py" "$APP" "$ICON"
 fi
+chmod 755 "$EXEC"
 
 [[ "$(shasum -a 256 "$EXEC" | awk '{print $1}')" == "$MAIN_SHA" ]] || { echo "Main executable changed" >&2; exit 70; }
 find "$APP" -type d -name _CodeSignature -prune -exec rm -rf {} +
@@ -127,13 +135,13 @@ for path in (app/'BuiltinEffects').glob('*.xml'):
     category=category_match.group(2).strip().lower() if category_match else ''
     counts[category]=counts.get(category,0)+1
 package={
-  'schemaVersion':1,
+  'schemaVersion':2,
   'release':'v2.2-beta19',
   'displayName':plist.get('CFBundleDisplayName'),
   'bundleIdentifier':plist.get('CFBundleIdentifier'),
   'mainExecutableSHA256':sys.argv[2],
   'frameworkExecutableSHA256':sys.argv[3],
-  'thumbnailContractValid':bool(thumbnails.get('valid')),
+  'thumbnailContractValid':bool(thumbnails.get('validForRequiredRepairs')),
   'runtimeEffectsRepaired':runtime.get('repaired',0),
   'runtimeEffectsQuarantined':runtime.get('quarantined',0),
   'visualEffectsQuarantined':visual.get('quarantined',0),
@@ -173,8 +181,10 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     assert package['forcedOtherTargetCount'] is None
     edge_name=next(x for x in z.namelist() if x.endswith('/BuiltinEffects/bccedgeglow.xml'))
     assert b'thumb="thumb/bccedgeglow.png"' in z.read(edge_name)
-    thumb_name=next(x for x in z.namelist() if x.endswith('/thumb/bccedgeglow.png'))
+    thumb_name=next(x for x in z.namelist() if x.endswith('/BuiltinEffects/thumb/bccedgeglow.png'))
     assert z.read(thumb_name).startswith(b'\x89PNG\r\n\x1a\n')
+    blackbars_name=next(x for x in z.namelist() if x.endswith('/BuiltinEffects/skexnxxbbmaker.xml'))
+    assert b'com.alightcreative.effects.bbmaker' in z.read(blackbars_name)
 PY
 
 echo "Created $OUTPUT"
