@@ -8,7 +8,6 @@ enum ToolControllerFactory {
         switch toolID {
         case "speed.remap": return SpeedRemapStudioViewController()
         case "easing.curve": return EasingCurveViewController()
-        case "animation.core": return AnimationStudioViewController()
         case "cutout.person": return PersonCutoutStudioViewController()
         case "depth.map": return DepthMapStudioViewController()
         case "dead.frames": return DeadFrameCleanerViewController()
