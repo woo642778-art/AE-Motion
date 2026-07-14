@@ -20,6 +20,7 @@ enum ToolControllerFactory {
         case "color.palette": return ColorPaletteViewController()
         case "layer.offset": return LayerOffsetViewController()
         case "effects.integrity": return EffectIntegrityViewController(style: .insetGrouped)
+        case "project.reliability": return ProjectReliabilityViewController()
         case "host.diagnostics": return HostDiagnosticsViewController()
         default: return nil
         }

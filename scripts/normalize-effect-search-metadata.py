@@ -19,7 +19,7 @@ from pathlib import Path
 
 SUPPORTED = {
     "color", "drawing", "blur", "distort", "procedural", "3d",
-    "transform", "repeat", "matte", "opacity", "text",
+    "transform", "repeat", "matte", "opacity", "text", "other",
 }
 CATEGORY_MAP = {
     "lighting": "drawing", "light": "drawing", "glow": "drawing", "edge": "drawing",
@@ -39,7 +39,7 @@ def normalize_category(raw: str | None) -> str:
     value = (raw or "").strip().lower()
     if value in SUPPORTED:
         return value
-    return CATEGORY_MAP.get(value, "procedural")
+    return CATEGORY_MAP.get(value, "other")
 
 
 def normalize_tags(name: str, effect_id: str, existing: str | None, category: str | None = None) -> str:
@@ -71,6 +71,9 @@ def normalize_tags(name: str, effect_id: str, existing: str | None, category: st
             add(alias)
     elif normalized == "distort":
         for alias in ("distort", "distortion", "warp", "distortion warp", "distortion/warp"):
+            add(alias)
+    elif normalized == "other":
+        for alias in ("other", "imported", "custom"):
             add(alias)
 
     return ",".join(ordered)

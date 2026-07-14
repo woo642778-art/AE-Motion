@@ -2,7 +2,7 @@ name: Build iOS Extensions Framework
 on:
   workflow_dispatch:
   push:
-    branches: [ main, feature/v2.0.3a-effect-integrity ]
+    branches: [ main, feature/v2.0.3a-effect-integrity, feature/v2.1-project-reliability ]
   pull_request:
     branches: [ main ]
 jobs:
@@ -13,11 +13,26 @@ jobs:
       - name: Resolve package
         run: swift package resolve
       - name: Run core tests
-        run: swift test
+        id: core_tests
+        continue-on-error: true
+        run: swift test > swift-test.log 2>&1
+      - name: Upload core test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AEMotionExtensionsHost-core-test-log
+          path: swift-test.log
+      - name: Fail on core test error
+        if: steps.core_tests.outcome == 'failure'
+        run: |
+          tail -n 240 swift-test.log
+          exit 1
       - name: Run effect metadata tests
         run: python3 scripts/test-normalize-effect-search-metadata.py -v
       - name: Verify effect integrity tooling
         run: python3 scripts/test-effect-integrity.py -v
+      - name: Verify Other category restoration
+        run: python3 scripts/test-other-category-restoration.py -v
       - name: Verify Swift 6 preset error isolation
         run: python3 scripts/test-preset-application-host-error-isolation.py
       - name: Verify native UI integration contract
@@ -31,7 +46,20 @@ jobs:
           swiftc -frontend -parse Sources/AEMotionExtensionsHost/EffectIntegrityStore.swift
           swiftc -frontend -parse Sources/AEMotionExtensionsHost/EffectIntegrityViewController.swift
       - name: Build iOS framework
-        run: ./scripts/build-ios-framework.sh
+        id: ios_build
+        continue-on-error: true
+        run: ./scripts/build-ios-framework.sh > build-ios.log 2>&1
+      - name: Upload iOS build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AEMotionExtensionsHost-build-log
+          path: build-ios.log
+      - name: Fail on iOS build error
+        if: steps.ios_build.outcome == 'failure'
+        run: |
+          tail -n 240 build-ios.log
+          exit 1
       - name: Collect products
         run: |
           mkdir -p artifacts

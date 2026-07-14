@@ -16,6 +16,7 @@ public enum ToolRegistry {
         .init(id: "color.palette", title: "Color Palette Generator", subtitle: "Build harmonic color palettes", section: .utilities),
         .init(id: "layer.offset", title: "Layer Offset Planner", subtitle: "Plan sequential timing offsets", section: .utilities),
         .init(id: "effects.integrity", title: "Effect Integrity", subtitle: "Review verified, quarantined, duplicate and broken effects.", section: .scripts),
+        .init(id: "project.reliability", title: "Project Reliability", subtitle: "Autosave, crash recovery, history, proxy cache and Project Doctor", section: .utilities),
         .init(id: "host.diagnostics", title: "Native Host Diagnostics 3", subtitle: "Crash-resistant allowlisted scan for speed, keyframe and timeline bridges", section: .utilities),
     ]
 }

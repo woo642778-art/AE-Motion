@@ -75,7 +75,7 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
             sections.append(HubSection(title: "Resources", subtitle: nil, toolIDs: resources))
         }
 
-        let diagnostics = ["effects.integrity", "host.diagnostics"].filter(knownIDs.contains)
+        let diagnostics = ["effects.integrity", "project.reliability", "host.diagnostics"].filter(knownIDs.contains)
         if !diagnostics.isEmpty {
             sections.append(HubSection(title: "Diagnostics", subtitle: nil, toolIDs: diagnostics))
         }
@@ -245,6 +245,7 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
         case "color.palette": return "paintpalette"
         case "layer.offset": return "square.stack.3d.down.right"
         case "effects.integrity": return "checkmark.shield"
+        case "project.reliability": return "externaldrive.badge.checkmark"
         case "host.diagnostics": return "stethoscope"
         default: return "puzzlepiece.extension"
         }

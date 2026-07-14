@@ -1,0 +1,3 @@
+- Restored effects in the Other category.
+- Added project autosave, recovery, history, proxy and cache foundations.
+- Added Project Doctor diagnostics.
