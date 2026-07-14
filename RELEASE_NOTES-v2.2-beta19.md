@@ -1,0 +1,3 @@
+- Fixed effect thumbnails, black bars and broken default rendering.
+- Added contextual editing controls with live preview updates.
+- Reduced editing-tool clutter in Extensions & Scripts.
