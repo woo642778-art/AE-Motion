@@ -3,49 +3,54 @@ import UIKit
 import AEMotionExtensionsCore
 
 @MainActor
+enum ToolBuildResult {
+    case ready(UIViewController)
+    case unavailable(title: String, reason: String)
+}
+
+@MainActor
 enum ToolControllerFactory {
-    static func controller(for toolID: String) -> UIViewController? {
+    static func buildResult(for toolID: String) -> ToolBuildResult {
+        let title = ToolRegistry.all.first(where: { $0.id == toolID })?.title ?? toolID
         switch toolID {
-        case "speed.remap": return SpeedRemapStudioViewController()
-        case "easing.curve": return EasingCurveViewController()
-        case "cutout.person": return PersonCutoutStudioViewController()
-        case "depth.map": return DepthMapStudioViewController()
-        case "dead.frames": return DeadFrameCleanerViewController()
-        case "camera.shake": return CameraShakeViewController()
-        case "random.values": return RandomValuesViewController()
-        case "expression.helper": return ExpressionHelperViewController()
-        case "preset.library": return PresetLibraryViewController()
-        case "resource.hub": return ResourceHubViewController()
-        case "bpm.frames": return BPMCalculatorViewController()
-        case "color.palette": return ColorPaletteViewController()
-        case "layer.offset": return LayerOffsetViewController()
-        case "effects.integrity": return EffectIntegrityViewController(style: .insetGrouped)
-        case "project.reliability": return ProjectReliabilityViewController()
-        case "host.diagnostics": return HostDiagnosticsViewController()
-        default: return nil
+        case "speed.remap": return .ready(SpeedRemapStudioViewController())
+        case "easing.curve": return .ready(EasingCurveViewController())
+        case "cutout.person": return .ready(PersonCutoutStudioViewController())
+        case "depth.map": return .ready(DepthMapStudioViewController())
+        case "dead.frames": return .ready(DeadFrameCleanerViewController())
+        case "camera.shake": return .ready(CameraShakeViewController())
+        case "random.values": return .ready(RandomValuesViewController())
+        case "expression.helper": return .ready(ExpressionHelperViewController())
+        case "preset.library": return .ready(PresetLibraryViewController())
+        case "resource.hub": return .ready(ResourceHubViewController())
+        case "bpm.frames": return .ready(BPMCalculatorViewController())
+        case "color.palette": return .ready(ColorPaletteViewController())
+        case "layer.offset": return .ready(LayerOffsetViewController())
+        case "effects.integrity": return .ready(EffectIntegrityViewController(style: .insetGrouped))
+        case "project.reliability": return .ready(ProjectReliabilityViewController())
+        case "host.diagnostics": return .ready(HostDiagnosticsViewController())
+        default:
+            return .unavailable(
+                title: title,
+                reason: "This utility is not included in the current source-built framework."
+            )
         }
     }
 
-    static func descriptor(for toolID: String) -> ToolDescriptor? {
-        let placement = ToolPlacementRegistry.placement(for: toolID)
-        guard placement == .extensionsHub || toolID == "preset.library" || toolID == "project.reliability" else {
-            return nil
+    static func controller(for toolID: String) -> UIViewController? {
+        if case .ready(let controller) = buildResult(for: toolID) {
+            return controller
         }
+        return nil
+    }
+
+    static func descriptor(for toolID: String) -> ToolDescriptor? {
+        guard SafeToolRegistry.independentToolIDs.contains(toolID) else { return nil }
         return ToolRegistry.all.first { $0.id == toolID }
     }
 
     static func present(_ toolID: String, from presenter: UIViewController) {
-        guard let controller = controller(for: toolID) else {
-            ExtensionUI.alert(
-                title: "Tool unavailable",
-                message: "This tool is not available in the current build.",
-                from: presenter
-            )
-            return
-        }
-        let navigation = UINavigationController(rootViewController: controller)
-        navigation.modalPresentationStyle = .pageSheet
-        presenter.present(navigation, animated: true)
+        ToolPresentationGuard.present(toolID, from: presenter)
     }
 }
 #endif
