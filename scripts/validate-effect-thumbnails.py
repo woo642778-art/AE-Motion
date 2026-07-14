@@ -54,7 +54,7 @@ def validate_thumbnail_contract(app: Path) -> dict[str, object]:
         if relative.is_absolute() or ".." in relative.parts:
             errors.append({"effectID": effect_id, "fileName": descriptor.name, "code": "unsafe_thumbnail_path", "path": thumb})
             continue
-        asset = exact_case_path(app, relative)
+        asset = exact_case_path(effects, relative)
         if asset is None or not asset.is_file():
             errors.append({"effectID": effect_id, "fileName": descriptor.name, "code": "missing_case_sensitive_asset", "path": thumb})
             continue
@@ -65,7 +65,7 @@ def validate_thumbnail_contract(app: Path) -> dict[str, object]:
             continue
         checked.append({"effectID": effect_id, "fileName": descriptor.name, "path": thumb, "width": width, "height": height})
 
-    return {"schemaVersion": 1, "valid": not errors, "checked": checked, "errors": errors}
+    return {"schemaVersion": 1, "assetRoot": "BuiltinEffects", "valid": not errors, "checked": checked, "errors": errors}
 
 
 def main() -> int:
