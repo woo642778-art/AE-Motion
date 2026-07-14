@@ -1,0 +1,1 @@
+<effect id="com.aemotion.fixture.duplicate" name="Duplicate B" category="procedural"><shader><![CDATA[void main(){gl_FragColor=vec4(0.0);}]]></shader></effect>
