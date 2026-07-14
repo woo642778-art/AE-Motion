@@ -3,7 +3,6 @@ import Foundation
 @preconcurrency import AVFoundation
 import AEMotionExtensionsCore
 
-@MainActor
 enum ProxyGenerationError: Error, LocalizedError {
     case unsupportedPreset
     case exportSessionUnavailable
