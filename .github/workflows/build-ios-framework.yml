@@ -13,7 +13,20 @@ jobs:
       - name: Resolve package
         run: swift package resolve
       - name: Run core tests
-        run: swift test
+        id: core_tests
+        continue-on-error: true
+        run: swift test > swift-test.log 2>&1
+      - name: Upload core test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AEMotionExtensionsHost-core-test-log
+          path: swift-test.log
+      - name: Fail on core test error
+        if: steps.core_tests.outcome == 'failure'
+        run: |
+          tail -n 240 swift-test.log
+          exit 1
       - name: Run effect metadata tests
         run: python3 scripts/test-normalize-effect-search-metadata.py -v
       - name: Verify effect integrity tooling
