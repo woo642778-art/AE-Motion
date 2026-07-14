@@ -74,3 +74,93 @@ public final class PreviewTransaction<Value: Equatable> {
         }
     }
 }
+
+public enum EffectQualificationStage: String, Codable, Sendable {
+    case ci
+    case device
+}
+
+public enum EffectQualificationDisposition: String, Codable, Sendable {
+    case passed
+    case failed
+    case deviceQualificationRequired
+    case timeout
+    case crashed
+}
+
+public struct EffectVisualMetrics: Equatable, Codable, Sendable {
+    public var topBlackRatio: Double
+    public var bottomBlackRatio: Double
+    public var leftBlackRatio: Double
+    public var rightBlackRatio: Double
+    public var transparentRatio: Double
+    public var alphaLossRatio: Double
+
+    public init(
+        topBlackRatio: Double,
+        bottomBlackRatio: Double,
+        leftBlackRatio: Double,
+        rightBlackRatio: Double,
+        transparentRatio: Double,
+        alphaLossRatio: Double
+    ) {
+        self.topBlackRatio = topBlackRatio
+        self.bottomBlackRatio = bottomBlackRatio
+        self.leftBlackRatio = leftBlackRatio
+        self.rightBlackRatio = rightBlackRatio
+        self.transparentRatio = transparentRatio
+        self.alphaLossRatio = alphaLossRatio
+    }
+
+    public static let zero = EffectVisualMetrics(
+        topBlackRatio: 0,
+        bottomBlackRatio: 0,
+        leftBlackRatio: 0,
+        rightBlackRatio: 0,
+        transparentRatio: 0,
+        alphaLossRatio: 0
+    )
+}
+
+public struct DeviceQualificationRecord: Equatable, Codable, Sendable {
+    public var effectID: String
+    public var descriptorSHA256: String
+    public var hostVersion: String
+    public var deviceClass: String
+    public var stage: EffectQualificationStage
+    public var disposition: EffectQualificationDisposition
+    public var metrics: EffectVisualMetrics
+
+    public init(
+        effectID: String,
+        descriptorSHA256: String,
+        hostVersion: String,
+        deviceClass: String,
+        stage: EffectQualificationStage,
+        disposition: EffectQualificationDisposition,
+        metrics: EffectVisualMetrics
+    ) {
+        self.effectID = effectID
+        self.descriptorSHA256 = descriptorSHA256
+        self.hostVersion = hostVersion
+        self.deviceClass = deviceClass
+        self.stage = stage
+        self.disposition = disposition
+        self.metrics = metrics
+    }
+}
+
+public enum EffectQualificationPolicy {
+    public static func isEligibleForOther(
+        effectID: String,
+        descriptorSHA256: String,
+        records: [DeviceQualificationRecord]
+    ) -> Bool {
+        records.contains {
+            $0.effectID.caseInsensitiveCompare(effectID) == .orderedSame
+                && $0.descriptorSHA256.lowercased() == descriptorSHA256.lowercased()
+                && $0.stage == .device
+                && $0.disposition == .passed
+        }
+    }
+}
