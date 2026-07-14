@@ -1,0 +1,3 @@
+- Fixed crashes and inactive effects in Add Effects.
+- Restored more effects in the Other category.
+- Added unified animation, gesture recording and professional velocity foundations.
