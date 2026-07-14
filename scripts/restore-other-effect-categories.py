@@ -35,6 +35,12 @@ class CategoryRepairResult:
     otherCount: int
     selectedEffectIDs: list[str]
 
+    @property
+    def matched(self) -> int: return self.preferredMatched
+
+    @property
+    def other_count(self) -> int: return self.otherCount
+
 
 def resolve_effects_directory(target: Path) -> Path:
     if target.name == "BuiltinEffects": return target
@@ -88,11 +94,9 @@ def restore_other_categories(target: Path, report_path: Path | None = None, targ
     descriptors: list[tuple[Path, str, dict[str, str]]] = []
     scanned = 0
     for path in sorted(effects.glob("*.xml")):
-        original = path.read_text(encoding="utf-8")
-        match = EFFECT_RE.search(original)
+        original = path.read_text(encoding="utf-8"); match = EFFECT_RE.search(original)
         if not match: continue
-        scanned += 1
-        descriptors.append((path, match.group(0), attributes(match.group(0))))
+        scanned += 1; descriptors.append((path, match.group(0), attributes(match.group(0))))
 
     preferred: list[tuple[Path, str, dict[str, str]]] = []
     automatic: list[tuple[Path, str, dict[str, str]]] = []
@@ -101,7 +105,7 @@ def restore_other_categories(target: Path, report_path: Path | None = None, targ
         effect_id = descriptor_attrs.get("id", "").strip().lower()
         if effect_id in PREFERRED_OTHER_EFFECT_IDS and runtime_safe_candidate(path, descriptor_attrs, records.get(effect_id)):
             preferred.append(item)
-        elif runtime_safe_candidate(path, descriptor_attrs, records.get(effect_id)):
+        elif records and effect_id in records and runtime_safe_candidate(path, descriptor_attrs, records.get(effect_id)):
             automatic.append(item)
 
     automatic.sort(key=lambda item: (item[2].get("name", "").lower(), item[2].get("id", "").lower(), item[0].name.lower()))
@@ -111,8 +115,7 @@ def restore_other_categories(target: Path, report_path: Path | None = None, targ
     for path, _, descriptor_attrs in descriptors:
         effect_id = descriptor_attrs.get("id", "").strip().lower()
         if effect_id not in selected_ids: continue
-        original = path.read_text(encoding="utf-8")
-        match = EFFECT_RE.search(original)
+        original = path.read_text(encoding="utf-8"); match = EFFECT_RE.search(original)
         if not match: continue
         updated = replace_attribute(match.group(0), "category", "other")
         tags = [value.strip() for value in re.split(r"[,;]", descriptor_attrs.get("tags", "")) if value.strip()]
@@ -121,8 +124,7 @@ def restore_other_categories(target: Path, report_path: Path | None = None, targ
             if value not in lowered: tags.append(value); lowered.add(value)
         updated = replace_attribute(updated, "tags", ",".join(tags))
         if updated != match.group(0):
-            path.write_text(original[:match.start()] + updated + original[match.end():], encoding="utf-8")
-            changed += 1
+            path.write_text(original[:match.start()] + updated + original[match.end():], encoding="utf-8"); changed += 1
 
     final_ids: list[str] = []
     for path in sorted(effects.glob("*.xml")):
@@ -140,19 +142,13 @@ def restore_other_categories(target: Path, report_path: Path | None = None, targ
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("target", type=Path)
-    parser.add_argument("--report", type=Path)
-    parser.add_argument("--target-count", type=int, default=64)
-    parser.add_argument("--manifest", type=Path)
-    parser.add_argument("--require-populated-other", action="store_true")
+    parser.add_argument("target", type=Path); parser.add_argument("--report", type=Path); parser.add_argument("--target-count", type=int, default=64); parser.add_argument("--manifest", type=Path); parser.add_argument("--require-populated-other", action="store_true")
     args = parser.parse_args()
     result = restore_other_categories(args.target.expanduser().resolve(), args.report.expanduser().resolve() if args.report else None, max(args.target_count, 1), args.manifest.expanduser().resolve() if args.manifest else None)
     print(f"Scanned {result.scanned}; preferred {result.preferredMatched}; auto {result.autoSelected}; changed {result.changed}; Other category {result.otherCount}")
     if args.require_populated_other and result.otherCount == 0:
-        print("Other category integrity failure: no safe descriptors are assigned to category='other'.", file=__import__('sys').stderr)
-        return 2
-    if result.otherCount < args.target_count:
-        print(f"Other category warning: requested {args.target_count}, selected {result.otherCount} safe descriptors.")
+        print("Other category integrity failure: no safe descriptors are assigned to category='other'.", file=__import__('sys').stderr); return 2
+    if result.otherCount < args.target_count: print(f"Other category warning: requested {args.target_count}, selected {result.otherCount} safe descriptors.")
     return 0
 
 if __name__ == "__main__": raise SystemExit(main())
