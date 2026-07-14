@@ -25,9 +25,10 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(a.map(\.x), b.map(\.x)); XCTAssertEqual(a.map(\.y), b.map(\.y))
     }
     func testToolRegistryContainsFunctionalTools() {
-        XCTAssertEqual(ToolRegistry.all.count, 14)
+        XCTAssertEqual(ToolRegistry.all.count, 15)
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "speed.remap" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "host.diagnostics" })
+        XCTAssertTrue(ToolRegistry.all.contains { $0.id == "effects.integrity" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "cutout.person" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "dead.frames" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "depth.map" })
@@ -84,7 +85,6 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(EffectSearchMetadata.normalizedCategory("distort"), "distort")
         XCTAssertEqual(EffectSearchMetadata.normalizedCategory("blur"), "blur")
     }
-
 }
 
 extension CoreTests {
@@ -135,6 +135,57 @@ extension CoreTests {
             CollectionProxyForwardingPolicy.mayForward(
                 selectorName: "collectionView:layout:minimumLineSpacingForSectionAtIndex:"
             )
+        )
+    }
+}
+
+extension CoreTests {
+    func testBrokenEffectsAreNotVisible() {
+        XCTAssertFalse(EffectVisibilityPolicy.isVisible(.existingBroken))
+        XCTAssertFalse(EffectVisibilityPolicy.isVisible(.placeholder))
+        XCTAssertFalse(EffectVisibilityPolicy.isVisible(.unsupportedDependency))
+        XCTAssertTrue(EffectVisibilityPolicy.isVisible(.existingWorking))
+        XCTAssertTrue(EffectVisibilityPolicy.isVisible(.implementedVerified))
+    }
+
+    func testIntegrityReportRoundTrip() throws {
+        let report = EffectIntegrityReport(
+            schemaVersion: 1,
+            generatedAt: "2026-07-14T00:00:00Z",
+            sourceAppVersion: "6.2.42",
+            sourceBuild: "838",
+            records: [fixture(.existingWorking)]
+        )
+        let data = try JSONEncoder().encode(report)
+        XCTAssertEqual(try JSONDecoder().decode(EffectIntegrityReport.self, from: data), report)
+    }
+
+    func testIntegritySummaryCountsStatuses() {
+        let summary = EffectIntegritySummary(records: [
+            fixture(.existingWorking),
+            fixture(.existingBroken),
+            fixture(.existingBroken),
+            fixture(.implementedVerified),
+        ])
+        XCTAssertEqual(summary.visibleCount, 2)
+        XCTAssertEqual(summary.quarantinedCount, 2)
+        XCTAssertEqual(summary.totalCount, 4)
+    }
+
+    private func fixture(_ status: EffectIntegrityStatus) -> EffectIntegrityRecord {
+        EffectIntegrityRecord(
+            effectID: "com.aemotion.test.\(status.rawValue)",
+            name: "Test",
+            fileName: "test.xml",
+            category: "procedural",
+            status: status,
+            descriptorSHA256: String(repeating: "a", count: 64),
+            shaderSHA256: String(repeating: "b", count: 64),
+            parameterSignature: "amount:slider",
+            dependencies: [],
+            resources: [],
+            findings: [],
+            quarantineReason: nil
         )
     }
 }

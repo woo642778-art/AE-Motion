@@ -1,0 +1,4 @@
+<effect id="com.aemotion.fixture.texture" name="Missing Texture" category="procedural">
+  <params><texture id="external" srcType="image" src="textures/missing.png" /></params>
+  <shader><![CDATA[void main(){ gl_FragColor = texture2DCv(external.texture, acScreenNorm); }]]></shader>
+</effect>

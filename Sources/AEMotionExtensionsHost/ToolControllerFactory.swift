@@ -19,6 +19,7 @@ enum ToolControllerFactory {
         case "bpm.frames": return BPMCalculatorViewController()
         case "color.palette": return ColorPaletteViewController()
         case "layer.offset": return LayerOffsetViewController()
+        case "effects.integrity": return EffectIntegrityViewController(style: .insetGrouped)
         case "host.diagnostics": return HostDiagnosticsViewController()
         default: return nil
         }

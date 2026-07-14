@@ -1,0 +1,4 @@
+<effect id="com.aemotion.fixture.pass" name="Missing Pass" category="procedural">
+  <params><texture id="inputImg" srcType="content" /></params>
+  <passes><pass effect="com.aemotion.fixture.helper" /></passes>
+</effect>

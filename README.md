@@ -49,3 +49,45 @@ python3 scripts/normalize-effect-search-metadata.py \
 ```
 
 The normalizer edits only the opening `<effect>` attributes and preserves the effect body, parameters, shaders, and resource references.
+
+## v2.0.3 development boundary
+
+v2.0.3 is split into:
+
+1. `v2.0.3a` — effect inventory, integrity policy, packaging quarantine and diagnostics
+2. `v2.0.3b` — verified clean-room XML/GLSL effect pack
+
+v2.1 remains a separate Studio Core reliability release.
+
+## v2.0.3a validation
+
+```bash
+swift test
+python3 scripts/test-normalize-effect-search-metadata.py -v
+python3 scripts/test-effect-integrity.py -v
+python3 scripts/test-preset-application-host-error-isolation.py
+python3 scripts/test-ui-integration-contract.py
+python3 scripts/test-category-collection-proxy-isolation.py
+python3 scripts/test-category-proxy-indexpath-forwarding.py
+```
+
+Audit an extracted Beta 15 app:
+
+```bash
+PYTHONPATH=scripts python3 scripts/audit-builtin-effects.py \
+  /path/to/Payload/AlightMotion.app \
+  --output /tmp/effect-integrity.json \
+  --summary /tmp/effect-integrity-summary.txt
+```
+
+Package the unsigned Beta 16 IPA with the exact `AE motion` display name and a supplied icon image:
+
+```bash
+./scripts/package-v203-ipa.sh \
+  /path/to/AE-Motion-v2.0.2-beta15-crashfix-unsigned.ipa \
+  /path/to/AEMotionExtensionsHost.framework \
+  /path/to/AE-Motion-v2.0.3a-beta16-unsigned.ipa \
+  /path/to/AE-motion-icon.png
+```
+
+The packager normalizes metadata, audits all descriptors, quarantines unsafe effects before signing, preserves the Alight Motion main executable byte-for-byte, removes signature material and writes diagnostics manifests. Recursively sign the final app and nested framework using credentials controlled by the user.

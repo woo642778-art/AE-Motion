@@ -1,0 +1,3 @@
+- Added effect integrity auditing and unsafe-effect quarantine.
+- Added Effect Integrity diagnostics.
+- Updated the app icon and name to AE motion.

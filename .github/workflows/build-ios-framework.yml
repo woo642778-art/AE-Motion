@@ -2,6 +2,8 @@ name: Build iOS Extensions Framework
 on:
   workflow_dispatch:
   push:
+    branches: [ main, feature/v2.0.3a-effect-integrity ]
+  pull_request:
     branches: [ main ]
 jobs:
   build:
@@ -14,6 +16,8 @@ jobs:
         run: swift test
       - name: Run effect metadata tests
         run: python3 scripts/test-normalize-effect-search-metadata.py -v
+      - name: Verify effect integrity tooling
+        run: python3 scripts/test-effect-integrity.py -v
       - name: Verify Swift 6 preset error isolation
         run: python3 scripts/test-preset-application-host-error-isolation.py
       - name: Verify native UI integration contract
@@ -22,6 +26,10 @@ jobs:
         run: python3 scripts/test-category-collection-proxy-isolation.py
       - name: Verify category proxy index-path forwarding
         run: python3 scripts/test-category-proxy-indexpath-forwarding.py
+      - name: Parse effect diagnostics Swift sources
+        run: |
+          swiftc -frontend -parse Sources/AEMotionExtensionsHost/EffectIntegrityStore.swift
+          swiftc -frontend -parse Sources/AEMotionExtensionsHost/EffectIntegrityViewController.swift
       - name: Build iOS framework
         run: ./scripts/build-ios-framework.sh
       - name: Collect products
