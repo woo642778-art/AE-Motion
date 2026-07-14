@@ -61,7 +61,6 @@ import AEMotionExtensionsCore
             method_getImplementation(replacement),
             method_getTypeEncoding(replacement)
         )
-
         if added {
             class_replaceMethod(
                 cls,
@@ -77,7 +76,6 @@ import AEMotionExtensionsCore
 }
 
 nonisolated(unsafe) private var effectPickerProxyKey: UInt8 = 0
-nonisolated(unsafe) private var projectToolbarKey: UInt8 = 0
 
 extension UIViewController {
     @objc fileprivate func aemotion_effectPicker_viewWillAppear(_ animated: Bool) {
@@ -89,7 +87,8 @@ extension UIViewController {
     @objc fileprivate func aemotion_projectEditor_viewDidAppear(_ animated: Bool) {
         self.aemotion_projectEditor_viewDidAppear(animated)
         guard String(describing: type(of: self)).contains("ProjectEditVC") else { return }
-        aemotion_installProjectToolsIfNeeded()
+        ContextualButtonInjector.install(in: self)
+        ContextualButtonInjector.installUtilitiesButtonIfNeeded(in: self)
     }
 
     @MainActor
@@ -216,14 +215,12 @@ extension UIViewController {
             originalDelegate: collection.delegate,
             presenter: self
         )
-
         objc_setAssociatedObject(
             self,
             &effectPickerProxyKey,
             proxy,
             .OBJC_ASSOCIATION_RETAIN_NONATOMIC
         )
-
         collection.dataSource = proxy
         collection.delegate = proxy
         collection.reloadData()
@@ -255,105 +252,6 @@ extension UIViewController {
             collection.isScrollEnabled = true
             collection.alwaysBounceVertical = false
             collection.showsVerticalScrollIndicator = true
-        }
-    }
-
-    @MainActor
-    private func aemotion_installProjectToolsIfNeeded() {
-        guard objc_getAssociatedObject(self, &projectToolbarKey) == nil else { return }
-
-        let button = UIButton(type: .system)
-        button.accessibilityIdentifier = "aemotion.install.project.tools"
-        button.accessibilityLabel = "AE Motion tools"
-        button.accessibilityHint = "Opens editing tools for the current project"
-        button.setImage(UIImage(systemName: "wand.and.stars"), for: .normal)
-        button.tintColor = AEMotionTheme.accent
-        button.showsMenuAsPrimaryAction = true
-        button.menu = aemotion_projectToolsMenu()
-        button.widthAnchor.constraint(greaterThanOrEqualToConstant: 32).isActive = true
-        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 32).isActive = true
-
-        if let navigationController, !navigationController.isNavigationBarHidden {
-            let item = UIBarButtonItem(customView: button)
-            var items = navigationItem.rightBarButtonItems ?? []
-            items.append(item)
-            navigationItem.rightBarButtonItems = items
-            objc_setAssociatedObject(
-                self,
-                &projectToolbarKey,
-                item,
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        } else {
-            var configuration = UIButton.Configuration.tinted()
-            configuration.image = UIImage(systemName: "wand.and.stars")
-            configuration.cornerStyle = .capsule
-            configuration.baseForegroundColor = AEMotionTheme.accent
-            configuration.baseBackgroundColor = AEMotionTheme.surface
-            button.configuration = configuration
-            button.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview(button)
-            NSLayoutConstraint.activate([
-                button.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-                button.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
-                button.widthAnchor.constraint(greaterThanOrEqualToConstant: 38),
-                button.heightAnchor.constraint(equalToConstant: 38),
-            ])
-            view.bringSubviewToFront(button)
-            objc_setAssociatedObject(
-                self,
-                &projectToolbarKey,
-                button,
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        }
-    }
-
-    @MainActor
-    private func aemotion_projectToolsMenu() -> UIMenu {
-        let editToolIDs = ["speed.remap", "cutout.person", "depth.map", "dead.frames"]
-        let editActions = editToolIDs.compactMap { toolID -> UIAction? in
-            guard let descriptor = ToolControllerFactory.descriptor(for: toolID) else { return nil }
-            return UIAction(
-                title: descriptor.title,
-                image: UIImage(systemName: aemotion_iconName(for: toolID))
-            ) { [weak self] _ in
-                guard let self else { return }
-                ToolControllerFactory.present(toolID, from: self)
-            }
-        }
-
-        let presetAction = UIAction(
-            title: "Preset Studio",
-            image: UIImage(systemName: "slider.horizontal.3")
-        ) { [weak self] _ in
-            guard let self else { return }
-            ToolControllerFactory.present("preset.library", from: self)
-        }
-
-        let hubAction = UIAction(
-            title: "All AE Motion Tools",
-            image: UIImage(systemName: "square.grid.2x2")
-        ) { [weak self] _ in
-            guard let self else { return }
-            let navigation = UINavigationController(rootViewController: ExtensionsViewController(style: .insetGrouped))
-            navigation.modalPresentationStyle = .pageSheet
-            self.present(navigation, animated: true)
-        }
-
-        return UIMenu(title: "AE Motion", children: [
-            UIMenu(title: "Project Editing", options: .displayInline, children: editActions),
-            UIMenu(options: .displayInline, children: [presetAction, hubAction]),
-        ])
-    }
-
-    private func aemotion_iconName(for toolID: String) -> String {
-        switch toolID {
-        case "speed.remap": return "speedometer"
-        case "cutout.person": return "person.crop.rectangle"
-        case "depth.map": return "square.3.layers.3d.down.right"
-        case "dead.frames": return "film.stack"
-        default: return "wand.and.stars"
         }
     }
 }
