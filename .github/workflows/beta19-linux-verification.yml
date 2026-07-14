@@ -1,0 +1,51 @@
+name: Beta 19 Linux Verification
+on:
+  push:
+    branches:
+      - feature/v2.2-beta19-contextual-live-preview
+  pull_request:
+    branches:
+      - feature/v2.2-animation-core-effect-stability
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve package
+        run: swift package resolve
+      - name: Run Swift tests
+        run: swift test
+      - name: Run effect metadata tests
+        run: python3 scripts/test-normalize-effect-search-metadata.py -v
+      - name: Verify effect integrity tooling
+        run: python3 scripts/test-effect-integrity.py -v
+      - name: Verify runtime effect stability
+        run: python3 scripts/test-effect-runtime-stability.py -v
+      - name: Verify effect thumbnail contracts
+        run: python3 scripts/test-effect-thumbnail-contract.py -v
+      - name: Verify visual effect qualification
+        run: python3 scripts/test-effect-visual-qualification.py -v
+      - name: Verify evidence-based Other selection
+        run: python3 scripts/test-other-category-restoration.py -v
+      - name: Verify native UI source contract
+        run: python3 scripts/test-ui-integration-contract.py
+      - name: Verify preset and category regressions
+        run: |
+          python3 scripts/test-preset-application-host-error-isolation.py
+          python3 scripts/test-category-collection-proxy-isolation.py
+          python3 scripts/test-category-proxy-indexpath-forwarding.py
+      - name: Parse contextual host sources
+        run: |
+          swiftc -frontend -parse Sources/AEMotionExtensionsHost/HostEditingContextBridge.swift
+          swiftc -frontend -parse Sources/AEMotionExtensionsHost/LivePreviewCoordinator.swift
+          swiftc -frontend -parse Sources/AEMotionExtensionsHost/ContextualButtonInjector.swift
+          swiftc -frontend -parse Sources/AEMotionExtensionsHost/ContextualEditingViewController.swift
+          swiftc -frontend -parse Sources/AEMotionExtensionsHost/RuntimeResolver.swift
+      - name: Collect verification source
+        run: |
+          mkdir -p artifacts
+          zip -qry artifacts/AE-Motion-v2.2-beta19-packaging-source.zip scripts Effects RELEASE_NOTES-v2.2-beta19.md docs/v2.2-beta19-device-checklist.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AE-Motion-v2.2-beta19-linux-verification
+          path: artifacts/*
