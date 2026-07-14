@@ -17,9 +17,10 @@
 
 - Swift core tests.
 - Effect metadata normalization tests.
+- Effect integrity parser, audit and quarantine tests.
 - Swift 6 LocalizedError isolation regression test.
 - Native UI source-contract test.
-- Swift source parse and package build.
+- Xcode arm64 iOS Release framework build.
 
 ## v2.0.3
 
@@ -29,14 +30,13 @@
 - [x] Pre-sign unsafe-effect quarantine tooling.
 - [x] Packaged-report loader and Effect Integrity diagnostics UI.
 - [x] IPA packaging contract with `AE motion` name and supplied icon support.
-- [ ] GitHub Actions Xcode arm64 iOS Release build.
-- [ ] Beta 16 packaged IPA static verification with the new framework artifact.
+- [x] GitHub Actions Xcode arm64 iOS Release build.
+- [x] Beta 16 packaged IPA static verification with the new framework artifact.
 - [ ] iPhone/iPad device verification and crash-log review.
 - [ ] v2.0.3b verified clean-room effect pack.
 
-## Requires macOS/iPhone validation
+## Requires iPhone/iPad validation
 
-- Xcode arm64 iOS framework compile for v2.0.3a.
 - Verify ProjectEditVC runtime class resolution against the installed Alight Motion build.
 - Verify the contextual toolbar item or compact overlay does not overlap host controls.
 - Verify all Effect Picker backgrounds in category, search, empty and overscroll states.
