@@ -21,13 +21,13 @@ LARGE_LOOP_RE = re.compile(r"for\s*\([^;]*;\s*[^;]*(?:<=|<)\s*(?:128|192|256|512
 ATTR_RE = re.compile(r"(?P<name>[A-Za-z_:][\w:.-]*)\s*=\s*(?P<quote>['\"])(?P<value>.*?)(?P=quote)", re.S)
 EFFECT_RE = re.compile(r"<effect\b(?P<attrs>[^>]*)>", re.I | re.S)
 SHADER_RE = re.compile(r"<shader\b[^>]*>(?P<body>.*?)</shader>", re.I | re.S)
-_VISUAL_MODULE = None
 DEVICE_GATED_VISUAL_CODES = {
     "fixed_opaque_alpha",
     "unbounded_texture_coordinates",
     "zero_permitted_divisor",
     "aspect_ratio_bounds_uncertain",
 }
+_VISUAL_MODULE = None
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ class RuntimeRecord:
 
 
 def attrs(tag: str) -> dict[str, str]:
-    return {m.group("name").lower(): m.group("value") for m in ATTR_RE.finditer(tag)}
+    return {match.group("name").lower(): match.group("value") for match in ATTR_RE.finditer(tag)}
 
 
 def sha256(path: Path) -> str:
@@ -57,16 +57,22 @@ def sha256(path: Path) -> str:
 
 def visual_module():
     global _VISUAL_MODULE
-    if _VISUAL_MODULE is None:
-        path = Path(__file__).with_name("effect-visual-qualification.py")
-        spec = importlib.util.spec_from_file_location("aemotion_visual_qualification", path)
-        if spec is None or spec.loader is None:
-            raise RuntimeError("Unable to load visual qualification module")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-        _VISUAL_MODULE = module
-    return _VISUAL_MODULE
+    if _VISUAL_MODULE is False:
+        return None
+    if _VISUAL_MODULE is not None:
+        return _VISUAL_MODULE
+    path = Path(__file__).with_name("effect-visual-qualification.py")
+    if not path.is_file():
+        _VISUAL_MODULE = False
+        return None
+    spec = importlib.util.spec_from_file_location("aemotion_visual_qualification", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Unable to load visual qualification module")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    _VISUAL_MODULE = module
+    return module
 
 
 def analyze(path: Path) -> tuple[str, list[RuntimeFinding]]:
@@ -76,12 +82,10 @@ def analyze(path: Path) -> tuple[str, list[RuntimeFinding]]:
         return "", [RuntimeFinding("missing_effect_root", "error", "Descriptor has no effect root.")]
     effect_id = attrs(match.group(0)).get("id", "").strip()
     findings: list[RuntimeFinding] = []
-
     try:
         root = ET.fromstring(text)
     except ET.ParseError as error:
-        findings.append(RuntimeFinding("xml_parse_failure", "error", str(error)))
-        return effect_id, findings
+        return effect_id, [RuntimeFinding("xml_parse_failure", "error", str(error))]
 
     params = root.find("params")
     direct_ids: list[str] = []
@@ -92,21 +96,47 @@ def analyze(path: Path) -> tuple[str, list[RuntimeFinding]]:
                 direct_ids.append(value)
     duplicates = sorted({value for value in direct_ids if direct_ids.count(value) > 1})
     if duplicates:
-        findings.append(RuntimeFinding("duplicate_parameter_id", "error", f"Duplicate direct parameter IDs: {', '.join(duplicates)}"))
+        findings.append(
+            RuntimeFinding(
+                "duplicate_parameter_id",
+                "error",
+                f"Duplicate direct parameter IDs: {', '.join(duplicates)}",
+            )
+        )
 
-    shaders = [html.unescape(m.group("body")) for m in SHADER_RE.finditer(text)]
+    shaders = [html.unescape(item.group("body")) for item in SHADER_RE.finditer(text)]
     combined_shader = "\n".join(shaders)
     if shaders and "gl_FragColor" not in combined_shader:
         findings.append(RuntimeFinding("shader_has_no_output", "error", "Fragment shader never assigns gl_FragColor."))
     if LARGE_LOOP_RE.search(combined_shader):
-        findings.append(RuntimeFinding("high_risk_dynamic_loop", "error", "Shader contains a 128+ iteration loop that can trap or exhaust the mobile compiler."))
+        findings.append(
+            RuntimeFinding(
+                "high_risk_dynamic_loop",
+                "error",
+                "Shader contains a 128+ iteration loop that can trap or exhaust the mobile compiler.",
+            )
+        )
 
-    buffers = {element.attrib.get("id", "") for element in root.iter("texture") if element.attrib.get("srcType", "").lower() == "buffer"}
+    buffers = {
+        element.attrib.get("id", "")
+        for element in root.iter("texture")
+        if element.attrib.get("srcType", "").lower() == "buffer"
+    }
     buffers.discard("")
-    targets = {element.attrib.get("target", "") for element in root.iter("pass") if element.attrib.get("target")}
+    targets = {
+        element.attrib.get("target", "")
+        for element in root.iter("pass")
+        if element.attrib.get("target")
+    }
     missing_targets = sorted(targets - buffers)
     if missing_targets:
-        findings.append(RuntimeFinding("missing_pass_buffer", "error", f"Pass targets undeclared buffers: {', '.join(missing_targets)}"))
+        findings.append(
+            RuntimeFinding(
+                "missing_pass_buffer",
+                "error",
+                f"Pass targets undeclared buffers: {', '.join(missing_targets)}",
+            )
+        )
 
     for element in root.iter():
         if element.tag.lower() not in {"spinner", "slider", "integer"}:
@@ -125,22 +155,65 @@ def analyze(path: Path) -> tuple[str, list[RuntimeFinding]]:
         except ValueError:
             findings.append(RuntimeFinding("invalid_numeric_parameter", "error", f"{element.attrib.get('id', '?')} has malformed numeric metadata."))
 
-    for visual in visual_module().analyze_descriptor_text(text):
-        code = str(visual.get("code", "visual_risk"))
-        severity = "warning" if code in DEVICE_GATED_VISUAL_CODES else "error" if visual.get("confidence") == "high" else "warning"
-        message = str(visual.get("message", "Visual qualification requires review."))
-        if not any(item.code == code for item in findings):
-            findings.append(RuntimeFinding(code, severity, message))
-
+    visual = visual_module()
+    if visual is not None:
+        for item in visual.analyze_descriptor_text(text):
+            code = str(item.get("code", "visual_risk"))
+            severity = (
+                "warning"
+                if code in DEVICE_GATED_VISUAL_CODES
+                else "error" if item.get("confidence") == "high" else "warning"
+            )
+            message = str(item.get("message", "Visual qualification requires review."))
+            if not any(existing.code == code for existing in findings):
+                findings.append(RuntimeFinding(code, severity, message))
     return effect_id, findings
 
 
+def audit_runtime_stability(app: Path) -> dict[str, object]:
+    effects = Path(app) / "BuiltinEffects"
+    records: list[RuntimeRecord] = []
+    scanned = 0
+    for path in sorted(effects.glob("*.xml")):
+        scanned += 1
+        effect_id, findings = analyze(path)
+        if findings:
+            records.append(
+                RuntimeRecord(
+                    effectID=effect_id,
+                    fileName=path.name,
+                    action="reported",
+                    beforeSHA256=sha256(path),
+                    afterSHA256=sha256(path),
+                    findings=[asdict(item) for item in findings],
+                )
+            )
+    error_count = sum(
+        1
+        for record in records
+        if any(finding["severity"] == "error" for finding in record.findings)
+    )
+    warning_count = sum(
+        1
+        for record in records
+        if any(finding["severity"] == "warning" for finding in record.findings)
+    )
+    return {
+        "schemaVersion": 3,
+        "release": "v2.2-beta20",
+        "mode": "report",
+        "scanned": scanned,
+        "errorCount": error_count,
+        "warningCount": warning_count,
+        "records": [asdict(record) for record in records],
+    }
+
+
 def repair_and_quarantine(app: Path, repair_dir: Path, manifest_path: Path) -> dict[str, object]:
-    effects = app / "BuiltinEffects"
-    quarantine = app / "AEMotionQuarantine" / "RuntimeEffects"
+    effects = Path(app) / "BuiltinEffects"
+    quarantine = Path(app) / "AEMotionQuarantine" / "RuntimeEffects"
     quarantine.mkdir(parents=True, exist_ok=True)
     records: list[RuntimeRecord] = []
-
     by_id: dict[str, Path] = {}
     for path in effects.glob("*.xml"):
         match = EFFECT_RE.search(path.read_text(encoding="utf-8"))
@@ -148,10 +221,9 @@ def repair_and_quarantine(app: Path, repair_dir: Path, manifest_path: Path) -> d
             effect_id = attrs(match.group(0)).get("id", "").strip().lower()
             if effect_id:
                 by_id[effect_id] = path
-
     for effect_id, filename in KNOWN_REPAIRS.items():
         target = by_id.get(effect_id.lower())
-        source = repair_dir / filename
+        source = Path(repair_dir) / filename
         if target is None:
             raise FileNotFoundError(f"Known repair target is missing: {effect_id}")
         if not source.is_file():
@@ -162,8 +234,16 @@ def repair_and_quarantine(app: Path, repair_dir: Path, manifest_path: Path) -> d
         if source_id.lower() != effect_id.lower() or errors:
             raise RuntimeError(f"Repair validation failed for {effect_id}: {errors}")
         shutil.copy2(source, target)
-        records.append(RuntimeRecord(effect_id, target.name, "repaired", before, sha256(target), [asdict(x) for x in source_findings]))
-
+        records.append(
+            RuntimeRecord(
+                effect_id,
+                target.name,
+                "repaired",
+                before,
+                sha256(target),
+                [asdict(item) for item in source_findings],
+            )
+        )
     for path in sorted(effects.glob("*.xml")):
         effect_id, findings = analyze(path)
         errors = [finding for finding in findings if finding.severity == "error"]
@@ -174,29 +254,47 @@ def repair_and_quarantine(app: Path, repair_dir: Path, manifest_path: Path) -> d
         if destination.exists():
             destination.unlink()
         shutil.move(str(path), destination)
-        records.append(RuntimeRecord(effect_id, path.name, "quarantined", before, None, [asdict(x) for x in findings]))
-
+        records.append(
+            RuntimeRecord(
+                effect_id,
+                path.name,
+                "quarantined",
+                before,
+                None,
+                [asdict(item) for item in findings],
+            )
+        )
     result = {
         "schemaVersion": 2,
-        "release": "v2.2-beta19",
+        "release": "v2.2-beta19-legacy",
+        "mode": "legacy-quarantine",
         "repaired": sum(record.action == "repaired" for record in records),
         "quarantined": sum(record.action == "quarantined" for record in records),
         "records": [asdict(record) for record in records],
     }
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    Path(manifest_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(manifest_path).write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("app", type=Path)
-    parser.add_argument("--repairs", type=Path, required=True)
+    parser.add_argument("--mode", choices=("report", "legacy-quarantine"), default="report")
+    parser.add_argument("--repairs", type=Path)
     parser.add_argument("--manifest", type=Path, required=True)
     args = parser.parse_args()
-    result = repair_and_quarantine(args.app.resolve(), args.repairs.resolve(), args.manifest.resolve())
-    print(f"Repaired {result['repaired']} and quarantined {result['quarantined']} runtime-risk effects.")
-    return 0
+    if args.mode == "legacy-quarantine":
+        if args.repairs is None:
+            parser.error("--repairs is required in legacy-quarantine mode")
+        result = repair_and_quarantine(args.app.resolve(), args.repairs.resolve(), args.manifest.resolve())
+        print(f"Repaired {result['repaired']} and quarantined {result['quarantined']} runtime-risk effects.")
+        return 0
+    result = audit_runtime_stability(args.app.resolve())
+    args.manifest.parent.mkdir(parents=True, exist_ok=True)
+    args.manifest.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    print(f"Runtime audit scanned {result['scanned']} effects; errors {result['errorCount']}; warnings {result['warningCount']}.")
+    return 2 if result["errorCount"] else 0
 
 
 if __name__ == "__main__":
