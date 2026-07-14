@@ -2,9 +2,9 @@ name: Build iOS Extensions Framework
 on:
   workflow_dispatch:
   push:
-    branches: [ main, feature/v2.0.3a-effect-integrity, feature/v2.1-project-reliability, feature/v2.2-animation-core-effect-stability ]
+    branches: [ main, feature/v2.0.3a-effect-integrity, feature/v2.1-project-reliability, feature/v2.2-animation-core-effect-stability, feature/v2.2-beta19-contextual-live-preview ]
   pull_request:
-    branches: [ main, feature/v2.1-project-reliability ]
+    branches: [ main, feature/v2.1-project-reliability, feature/v2.2-animation-core-effect-stability ]
 jobs:
   build:
     runs-on: macos-15
