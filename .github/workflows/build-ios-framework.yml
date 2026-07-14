@@ -2,9 +2,9 @@ name: Build iOS Extensions Framework
 on:
   workflow_dispatch:
   push:
-    branches: [ main, feature/v2.0.3a-effect-integrity, feature/v2.1-project-reliability ]
+    branches: [ main, feature/v2.0.3a-effect-integrity, feature/v2.1-project-reliability, feature/v2.2-animation-core-effect-stability ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, feature/v2.1-project-reliability ]
 jobs:
   build:
     runs-on: macos-15
@@ -33,6 +33,8 @@ jobs:
         run: python3 scripts/test-effect-integrity.py -v
       - name: Verify Other category restoration
         run: python3 scripts/test-other-category-restoration.py -v
+      - name: Verify runtime effect stability
+        run: python3 scripts/test-effect-runtime-stability.py -v
       - name: Verify Swift 6 preset error isolation
         run: python3 scripts/test-preset-application-host-error-isolation.py
       - name: Verify native UI integration contract
@@ -41,10 +43,11 @@ jobs:
         run: python3 scripts/test-category-collection-proxy-isolation.py
       - name: Verify category proxy index-path forwarding
         run: python3 scripts/test-category-proxy-indexpath-forwarding.py
-      - name: Parse effect diagnostics Swift sources
+      - name: Parse diagnostic and animation Swift sources
         run: |
           swiftc -frontend -parse Sources/AEMotionExtensionsHost/EffectIntegrityStore.swift
           swiftc -frontend -parse Sources/AEMotionExtensionsHost/EffectIntegrityViewController.swift
+          swiftc -frontend -parse Sources/AEMotionExtensionsHost/AnimationStudioViewController.swift
       - name: Build iOS framework
         id: ios_build
         continue-on-error: true
