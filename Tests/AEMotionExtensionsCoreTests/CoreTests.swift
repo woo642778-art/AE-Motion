@@ -25,10 +25,11 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(a.map(\.x), b.map(\.x)); XCTAssertEqual(a.map(\.y), b.map(\.y))
     }
     func testToolRegistryContainsFunctionalTools() {
-        XCTAssertEqual(ToolRegistry.all.count, 15)
+        XCTAssertEqual(ToolRegistry.all.count, 16)
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "speed.remap" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "host.diagnostics" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "effects.integrity" })
+        XCTAssertTrue(ToolRegistry.all.contains { $0.id == "project.reliability" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "cutout.person" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "dead.frames" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "depth.map" })
@@ -96,6 +97,7 @@ extension CoreTests {
         XCTAssertEqual(ToolPlacementRegistry.placement(for: "dead.frames"), .clip)
         XCTAssertEqual(ToolPlacementRegistry.placement(for: "camera.shake"), .layer)
         XCTAssertEqual(ToolPlacementRegistry.placement(for: "color.palette"), .color)
+        XCTAssertEqual(ToolPlacementRegistry.placement(for: "project.reliability"), .project)
     }
 
     func testToolPlacementRegistryKeepsGlobalUtilitiesInHub() {
