@@ -8,14 +8,23 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def exists(path: str) -> bool:
+    return (ROOT / path).exists()
+
+
 def require(text: str, token: str, name: str, checks: dict[str, bool]) -> None:
     checks[name] = token in text
 
 
 checks = {
-    "theme file": (ROOT / "Sources/AEMotionExtensionsHost/AEMotionTheme.swift").exists(),
-    "tool factory": (ROOT / "Sources/AEMotionExtensionsHost/ToolControllerFactory.swift").exists(),
-    "effect integrity screen": (ROOT / "Sources/AEMotionExtensionsHost/EffectIntegrityViewController.swift").exists(),
+    "theme file": exists("Sources/AEMotionExtensionsHost/AEMotionTheme.swift"),
+    "tool factory": exists("Sources/AEMotionExtensionsHost/ToolControllerFactory.swift"),
+    "effect integrity screen": exists("Sources/AEMotionExtensionsHost/EffectIntegrityViewController.swift"),
+    "host editing bridge": exists("Sources/AEMotionExtensionsHost/HostEditingContextBridge.swift"),
+    "live preview coordinator": exists("Sources/AEMotionExtensionsHost/LivePreviewCoordinator.swift"),
+    "contextual injector": exists("Sources/AEMotionExtensionsHost/ContextualButtonInjector.swift"),
+    "contextual editor": exists("Sources/AEMotionExtensionsHost/ContextualEditingViewController.swift"),
+    "standalone animation studio removed": not exists("Sources/AEMotionExtensionsHost/AnimationStudioViewController.swift"),
 }
 
 if checks["theme file"]:
@@ -28,20 +37,44 @@ if checks["theme file"]:
     })
 
 runtime = read("Sources/AEMotionExtensionsHost/RuntimeResolver.swift")
-checks.update({
-    "project editor hook candidates": "projectEditorControllerNames" in runtime,
-    "contextual project toolbar": "aemotion.install.project.tools" in runtime,
-    "effect picker background normalization": "aemotion_normalizeEffectPickerAppearance" in runtime,
-})
-
+bootstrap = read("Sources/AEMotionExtensionsHost/Bootstrap.swift")
 extensions = read("Sources/AEMotionExtensionsHost/ExtensionsViewController.swift")
 tool_registry = read("Sources/AEMotionExtensionsCore/ToolRegistry.swift")
 tool_factory = read("Sources/AEMotionExtensionsHost/ToolControllerFactory.swift")
+bridge = read("Sources/AEMotionExtensionsHost/HostEditingContextBridge.swift")
+coordinator = read("Sources/AEMotionExtensionsHost/LivePreviewCoordinator.swift")
+injector = read("Sources/AEMotionExtensionsHost/ContextualButtonInjector.swift")
+context_ui = read("Sources/AEMotionExtensionsHost/ContextualEditingViewController.swift")
+
 checks.update({
+    "project editor hook candidates": "projectEditorControllerNames" in runtime,
+    "contextual installer from project editor": "ContextualButtonInjector.install(in: self)" in runtime,
+    "contextual runtime hook bootstrap": "ContextualButtonInjector.installRuntimeHook()" in bootstrap,
+    "legacy global editing toolbar removed": "aemotion_installProjectToolsIfNeeded" not in runtime and "Project Editing" not in runtime,
+    "effect picker background normalization": "aemotion_normalizeEffectPickerAppearance" in runtime,
     "dynamic visible sections": "visibleSections" in extensions,
     "recent section": "Recent" in extensions,
     "themed empty state": "AEMotionTheme.emptyState" in extensions,
+    "editing shortcuts section removed": 'title: "Editing Shortcuts"' not in extensions,
+    "hub visibility filter": "hubVisibleToolIDs" in extensions,
+    "animation core absent from registry": '"animation.core"' not in tool_registry,
+    "animation core absent from factory": 'case "animation.core"' not in tool_factory,
+    "fail closed bridge": "guard contract.isSupported" in bridge,
+    "ui control value change": "sendActions(for: .valueChanged)" in bridge,
+    "preview invalidation": "setNeedsDisplay" in coordinator or "setNeedsDisplay" in bridge,
+    "selection rollback": "selectionDidChange" in coordinator,
+    "no private database access": "NSPersistentStore" not in bridge and "sqlite" not in bridge.lower(),
+    "transform contextual button": "aemotion.context.transform" in injector,
+    "graph contextual button": "aemotion.context.graph" in injector,
+    "speed contextual button": "aemotion.context.speed" in injector,
+    "effect contextual button": "aemotion.context.effect" in injector,
+    "live preview update path": "coordinator.update" in context_ui,
+    "cancel rollback path": "coordinator.cancel" in context_ui,
+    "no render reimport": "AVAssetExportSession" not in context_ui and "PHPhotoLibrary" not in context_ui,
+    "independent utilities button": "aemotion.install.utilities" in injector,
+    "legacy project button removed by injector": "aemotion.install.project.tools" in injector,
 })
+
 require(tool_registry, '"effects.integrity"', "effect integrity tool", checks)
 require(tool_factory, 'case "effects.integrity"', "effect integrity controller", checks)
 require(extensions, '"effects.integrity"', "effect integrity diagnostics row", checks)
