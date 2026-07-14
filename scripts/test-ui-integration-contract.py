@@ -19,6 +19,9 @@ def require(text: str, token: str, name: str, checks: dict[str, bool]) -> None:
 checks = {
     "theme file": exists("Sources/AEMotionExtensionsHost/AEMotionTheme.swift"),
     "tool factory": exists("Sources/AEMotionExtensionsHost/ToolControllerFactory.swift"),
+    "safe tool registry": exists("Sources/AEMotionExtensionsCore/SafeToolRegistry.swift"),
+    "unavailable tool screen": exists("Sources/AEMotionExtensionsHost/UnavailableToolViewController.swift"),
+    "tool presentation guard": exists("Sources/AEMotionExtensionsHost/ToolPresentationGuard.swift"),
     "effect integrity screen": exists("Sources/AEMotionExtensionsHost/EffectIntegrityViewController.swift"),
     "host editing bridge": exists("Sources/AEMotionExtensionsHost/HostEditingContextBridge.swift"),
     "live preview coordinator": exists("Sources/AEMotionExtensionsHost/LivePreviewCoordinator.swift"),
@@ -40,7 +43,9 @@ runtime = read("Sources/AEMotionExtensionsHost/RuntimeResolver.swift")
 bootstrap = read("Sources/AEMotionExtensionsHost/Bootstrap.swift")
 extensions = read("Sources/AEMotionExtensionsHost/ExtensionsViewController.swift")
 tool_registry = read("Sources/AEMotionExtensionsCore/ToolRegistry.swift")
+safe_registry = read("Sources/AEMotionExtensionsCore/SafeToolRegistry.swift")
 tool_factory = read("Sources/AEMotionExtensionsHost/ToolControllerFactory.swift")
+presentation_guard = read("Sources/AEMotionExtensionsHost/ToolPresentationGuard.swift")
 bridge = read("Sources/AEMotionExtensionsHost/HostEditingContextBridge.swift")
 coordinator = read("Sources/AEMotionExtensionsHost/LivePreviewCoordinator.swift")
 injector = read("Sources/AEMotionExtensionsHost/ContextualButtonInjector.swift")
@@ -52,11 +57,15 @@ checks.update({
     "contextual runtime hook bootstrap": "ContextualButtonInjector.installRuntimeHook()" in bootstrap,
     "legacy global editing toolbar removed": "aemotion_installProjectToolsIfNeeded" not in runtime and "Project Editing" not in runtime,
     "effect picker background normalization": "aemotion_normalizeEffectPickerAppearance" in runtime,
-    "dynamic visible sections": "visibleSections" in extensions,
+    "immutable registry snapshot": "registrySnapshot = SafeToolRegistry.snapshot()" in extensions,
     "recent section": "Recent" in extensions,
     "themed empty state": "AEMotionTheme.emptyState" in extensions,
     "editing shortcuts section removed": 'title: "Editing Shortcuts"' not in extensions,
-    "hub visibility filter": "hubVisibleToolIDs" in extensions,
+    "independent IDs centralized": "independentToolIDs" in safe_registry,
+    "typed tool construction": "ToolBuildResult" in tool_factory and "buildResult" in tool_factory,
+    "row presentation isolation": "ToolPresentationGuard.push" in extensions,
+    "unavailable destination": "UnavailableToolViewController" in presentation_guard,
+    "rapid tap guard": "isOpeningTool" in extensions,
     "animation core absent from registry": '"animation.core"' not in tool_registry,
     "animation core absent from factory": 'case "animation.core"' not in tool_factory,
     "fail closed bridge": "guard contract.isSupported" in bridge,

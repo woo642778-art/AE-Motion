@@ -7,77 +7,47 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
     private struct HubSection: Equatable {
         let title: String
         let subtitle: String?
-        let toolIDs: [String]
+        let entries: [SafeToolRegistryEntry]
     }
 
     private let favoritesKey = "AEMotionExtensions.favorites"
     private let recentKey = "AEMotionExtensions.recent"
+    private var registrySnapshot: [SafeToolRegistryEntry] = []
     private var favorites = Set<String>()
     private var recentIDs: [String] = []
     private var query = ""
+    private var isOpeningTool = false
 
-    private var hubVisibleToolIDs: Set<String> {
-        Set(ToolRegistry.all.compactMap {
-            ToolPlacementRegistry.placement(for: $0.id) == .extensionsHub
-                || $0.id == "preset.library"
-                || $0.id == "project.reliability"
-                ? $0.id : nil
-        })
-    }
-
-    private var hubVisibleTools: [ToolDescriptor] {
-        ToolRegistry.all.filter { hubVisibleToolIDs.contains($0.id) }
+    private var entriesByID: [String: SafeToolRegistryEntry] {
+        Dictionary(uniqueKeysWithValues: registrySnapshot.map { ($0.id, $0) })
     }
 
     private var visibleSections: [HubSection] {
         if !query.isEmpty {
-            let matches = hubVisibleTools.filter(matchesQuery)
-            return matches.isEmpty ? [] : [
-                HubSection(title: "Results", subtitle: nil, toolIDs: matches.map(\.id)),
-            ]
+            let matches = registrySnapshot.filter(matchesQuery)
+            return matches.isEmpty ? [] : [HubSection(title: "Results", subtitle: nil, entries: matches)]
         }
 
         var sections: [HubSection] = []
-        let knownIDs = hubVisibleToolIDs
-        let recent = recentIDs.filter(knownIDs.contains).prefix(5)
+        let byID = entriesByID
+        let recent = recentIDs.compactMap { byID[$0] }.prefix(5)
         if !recent.isEmpty {
-            sections.append(HubSection(
-                title: "Recent",
-                subtitle: "Tools opened most recently",
-                toolIDs: Array(recent)
-            ))
+            sections.append(HubSection(title: "Recent", subtitle: "Tools opened most recently", entries: Array(recent)))
         }
 
-        let favoriteIDs = hubVisibleTools.map(\.id).filter(favorites.contains)
-        if !favoriteIDs.isEmpty {
-            sections.append(HubSection(
-                title: "Favorites",
-                subtitle: nil,
-                toolIDs: favoriteIDs
-            ))
+        let favoriteEntries = registrySnapshot.filter { favorites.contains($0.id) }
+        if !favoriteEntries.isEmpty {
+            sections.append(HubSection(title: "Favorites", subtitle: nil, entries: favoriteEntries))
         }
 
-        let scripts = hubVisibleTools
-            .filter { $0.section == .scripts && $0.id != "effects.integrity" }
-            .map(\.id)
-        if !scripts.isEmpty {
-            sections.append(HubSection(title: "Scripts", subtitle: nil, toolIDs: scripts))
-        }
-
-        let presets = ["preset.library"].filter(knownIDs.contains)
-        if !presets.isEmpty {
-            sections.append(HubSection(title: "Presets", subtitle: nil, toolIDs: presets))
-        }
-
-        let resources = ["resource.hub", "bpm.frames", "layer.offset"].filter(knownIDs.contains)
-        if !resources.isEmpty {
-            sections.append(HubSection(title: "Resources", subtitle: nil, toolIDs: resources))
-        }
-
-        let diagnostics = ["effects.integrity", "project.reliability", "host.diagnostics"].filter(knownIDs.contains)
-        if !diagnostics.isEmpty {
-            sections.append(HubSection(title: "Diagnostics", subtitle: nil, toolIDs: diagnostics))
-        }
+        appendSection("Scripts", ids: ["random.values", "expression.helper"], to: &sections)
+        appendSection("Presets", ids: ["preset.library"], to: &sections)
+        appendSection("Resources", ids: ["resource.hub", "bpm.frames", "layer.offset"], to: &sections)
+        appendSection(
+            "Diagnostics",
+            ids: ["effects.integrity", "project.reliability", "host.diagnostics"],
+            to: &sections
+        )
         return sections
     }
 
@@ -92,6 +62,11 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Extensions & Scripts"
+        registrySnapshot = SafeToolRegistry.snapshot()
+        favorites = Set(UserDefaults.standard.stringArray(forKey: favoritesKey) ?? [])
+        recentIDs = UserDefaults.standard.stringArray(forKey: recentKey) ?? []
+        prunePersistedIDs()
+
         AEMotionTheme.apply(to: self)
         AEMotionTheme.apply(to: tableView)
         navigationItem.rightBarButtonItem = UIBarButtonItem(
@@ -104,13 +79,10 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
         tableView.estimatedRowHeight = 68
         tableView.tableFooterView = UIView()
 
-        favorites = Set(UserDefaults.standard.stringArray(forKey: favoritesKey) ?? [])
-        recentIDs = UserDefaults.standard.stringArray(forKey: recentKey) ?? []
-
         let search = UISearchController(searchResultsController: nil)
         search.searchResultsUpdater = self
         search.obscuresBackgroundDuringPresentation = false
-        search.searchBar.placeholder = "Search AE Motion tools"
+        search.searchBar.placeholder = "Search independent AE motion tools"
         navigationItem.searchController = search
         navigationItem.hidesSearchBarWhenScrolling = false
         updateBackgroundState()
@@ -120,19 +92,26 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
         dismiss(animated: true)
     }
 
-    private func descriptor(at indexPath: IndexPath) -> ToolDescriptor? {
-        let sections = visibleSections
-        guard sections.indices.contains(indexPath.section),
-              sections[indexPath.section].toolIDs.indices.contains(indexPath.row) else {
-            return nil
-        }
-        return ToolControllerFactory.descriptor(for: sections[indexPath.section].toolIDs[indexPath.row])
+    private func appendSection(_ title: String, ids: [String], to sections: inout [HubSection]) {
+        let byID = entriesByID
+        let entries = ids.compactMap { byID[$0] }
+        guard !entries.isEmpty else { return }
+        sections.append(HubSection(title: title, subtitle: nil, entries: entries))
     }
 
-    private func matchesQuery(_ item: ToolDescriptor) -> Bool {
-        item.title.localizedCaseInsensitiveContains(query)
-            || item.subtitle.localizedCaseInsensitiveContains(query)
-            || ToolPlacementRegistry.placement(for: item.id).rawValue.localizedCaseInsensitiveContains(query)
+    private func entry(at indexPath: IndexPath) -> SafeToolRegistryEntry? {
+        let sections = visibleSections
+        guard sections.indices.contains(indexPath.section),
+              sections[indexPath.section].entries.indices.contains(indexPath.row) else {
+            return nil
+        }
+        return sections[indexPath.section].entries[indexPath.row]
+    }
+
+    private func matchesQuery(_ entry: SafeToolRegistryEntry) -> Bool {
+        entry.title.localizedCaseInsensitiveContains(query)
+            || entry.subtitle.localizedCaseInsensitiveContains(query)
+            || entry.id.localizedCaseInsensitiveContains(query)
     }
 
     func updateSearchResults(for searchController: UISearchController) {
@@ -149,10 +128,18 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
         tableView.backgroundView = AEMotionTheme.emptyState(
             title: query.isEmpty ? "No tools available" : "No matching tools",
             message: query.isEmpty
-                ? "Independent AE Motion utilities and diagnostics appear here."
+                ? "Independent utilities and diagnostics appear here. Editing controls remain beside the native editor controls."
                 : "Try a different utility or diagnostic name.",
             systemImage: query.isEmpty ? "wand.and.stars" : "magnifyingglass"
         )
+    }
+
+    private func prunePersistedIDs() {
+        let known = Set(registrySnapshot.map(\.id))
+        favorites.formIntersection(known)
+        recentIDs = recentIDs.filter(known.contains)
+        UserDefaults.standard.set(Array(favorites).sorted(), forKey: favoritesKey)
+        UserDefaults.standard.set(recentIDs, forKey: recentKey)
     }
 
     private func recordRecent(_ toolID: String) {
@@ -177,47 +164,53 @@ final class ExtensionsViewController: UITableViewController, UISearchResultsUpda
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        visibleSections[section].toolIDs.count
+        visibleSections[section].entries.count
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        guard let item = descriptor(at: indexPath) else { return UITableViewCell() }
+        guard let entry = entry(at: indexPath) else { return UITableViewCell() }
         let cell = tableView.dequeueReusableCell(withIdentifier: "tool", for: indexPath)
         var config = cell.defaultContentConfiguration()
-        config.text = item.title
-        config.secondaryText = item.subtitle
-        config.image = UIImage(systemName: iconName(for: item.id))
-        config.textProperties.color = AEMotionTheme.primaryText
-        config.secondaryTextProperties.color = AEMotionTheme.secondaryText
+        config.text = entry.title
+        config.secondaryText = entry.subtitle
+        config.image = UIImage(systemName: iconName(for: entry.id))
         config.secondaryTextProperties.numberOfLines = 2
+        switch entry.availability {
+        case .available:
+            config.textProperties.color = AEMotionTheme.primaryText
+            config.secondaryTextProperties.color = AEMotionTheme.secondaryText
+            cell.accessoryType = .disclosureIndicator
+        case .unavailable(let reason):
+            config.textProperties.color = .secondaryLabel
+            config.secondaryText = reason
+            config.secondaryTextProperties.color = .tertiaryLabel
+            cell.accessoryType = .none
+        }
         config.imageProperties.tintColor = AEMotionTheme.accent
         cell.contentConfiguration = config
-        cell.accessoryType = .disclosureIndicator
         AEMotionTheme.configure(cell: cell, iconName: nil)
         return cell
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard let item = descriptor(at: indexPath),
-              let controller = ToolControllerFactory.controller(for: item.id) else { return }
-        recordRecent(item.id)
-        navigationController?.pushViewController(controller, animated: true)
+        guard !isOpeningTool, let entry = entry(at: indexPath) else { return }
+        isOpeningTool = true
+        recordRecent(entry.id)
+        ToolPresentationGuard.push(entry.id, from: navigationController)
+        DispatchQueue.main.async { [weak self] in self?.isOpeningTool = false }
     }
 
     override func tableView(
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
-        guard let item = descriptor(at: indexPath) else { return nil }
-        let isFavorite = favorites.contains(item.id)
-        let action = UIContextualAction(
-            style: .normal,
-            title: isFavorite ? "Unfavorite" : "Favorite"
-        ) { [weak self] _, _, completion in
+        guard let entry = entry(at: indexPath) else { return nil }
+        let isFavorite = favorites.contains(entry.id)
+        let action = UIContextualAction(style: .normal, title: isFavorite ? "Unfavorite" : "Favorite") { [weak self] _, _, completion in
             guard let self else { completion(false); return }
-            if isFavorite { self.favorites.remove(item.id) }
-            else { self.favorites.insert(item.id) }
+            if isFavorite { self.favorites.remove(entry.id) }
+            else { self.favorites.insert(entry.id) }
             UserDefaults.standard.set(Array(self.favorites).sorted(), forKey: self.favoritesKey)
             self.tableView.reloadData()
             self.updateBackgroundState()
