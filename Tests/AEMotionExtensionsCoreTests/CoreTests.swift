@@ -25,9 +25,8 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(a.map(\.x), b.map(\.x)); XCTAssertEqual(a.map(\.y), b.map(\.y))
     }
     func testToolRegistryContainsFunctionalTools() {
-        XCTAssertEqual(ToolRegistry.all.count, 17)
+        XCTAssertEqual(ToolRegistry.all.count, 16)
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "speed.remap" })
-        XCTAssertTrue(ToolRegistry.all.contains { $0.id == "animation.core" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "host.diagnostics" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "effects.integrity" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "project.reliability" })
@@ -36,6 +35,10 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "depth.map" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "preset.library" })
         XCTAssertTrue(ToolRegistry.all.contains { $0.id == "resource.hub" })
+    }
+    func testToolRegistryExcludesStandaloneAnimationCore() {
+        XCTAssertFalse(ToolRegistry.all.contains { $0.id == "animation.core" })
+        XCTAssertEqual(ToolRegistry.all.count, 16)
     }
     func testConstantSpeedCurve() throws {
         let curve = try SpeedCurve.constant(duration: 3, velocity: 2)
@@ -77,7 +80,6 @@ extension CoreTests {
     func testToolPlacementRegistryDistributesEditingToolsOutsideExtensionsHub() {
         XCTAssertEqual(ToolPlacementRegistry.placement(for: "speed.remap"), .timeline)
         XCTAssertEqual(ToolPlacementRegistry.placement(for: "easing.curve"), .graph)
-        XCTAssertEqual(ToolPlacementRegistry.placement(for: "animation.core"), .graph)
         XCTAssertEqual(ToolPlacementRegistry.placement(for: "cutout.person"), .layer)
         XCTAssertEqual(ToolPlacementRegistry.placement(for: "depth.map"), .viewer)
         XCTAssertEqual(ToolPlacementRegistry.placement(for: "dead.frames"), .clip)
