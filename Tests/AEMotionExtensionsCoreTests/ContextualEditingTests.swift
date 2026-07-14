@@ -64,4 +64,56 @@ final class ContextualEditingTests: XCTestCase {
         await coalescer.finish { delivered.append($0) }
         XCTAssertEqual(delivered.snapshot(), [2, 3])
     }
+
+    func testOtherEligibilityRequiresPassingDeviceRecordForExactHash() {
+        let record = DeviceQualificationRecord(
+            effectID: "com.example.glow",
+            descriptorSHA256: String(repeating: "a", count: 64),
+            hostVersion: "6.2.42",
+            deviceClass: "iPhone",
+            stage: .device,
+            disposition: .passed,
+            metrics: .init(
+                topBlackRatio: 0,
+                bottomBlackRatio: 0,
+                leftBlackRatio: 0,
+                rightBlackRatio: 0,
+                transparentRatio: 0.1,
+                alphaLossRatio: 0
+            )
+        )
+        XCTAssertTrue(EffectQualificationPolicy.isEligibleForOther(
+            effectID: "com.example.glow",
+            descriptorSHA256: String(repeating: "a", count: 64),
+            records: [record]
+        ))
+        XCTAssertFalse(EffectQualificationPolicy.isEligibleForOther(
+            effectID: "com.example.glow",
+            descriptorSHA256: String(repeating: "b", count: 64),
+            records: [record]
+        ))
+    }
+
+    func testFailedOrRequiredRecordCannotEnterOther() {
+        let hash = String(repeating: "c", count: 64)
+        let dispositions: [EffectQualificationDisposition] = [
+            .failed, .deviceQualificationRequired, .timeout, .crashed,
+        ]
+        for disposition in dispositions {
+            let record = DeviceQualificationRecord(
+                effectID: "com.example.fx",
+                descriptorSHA256: hash,
+                hostVersion: "6.2.42",
+                deviceClass: "iPad",
+                stage: .device,
+                disposition: disposition,
+                metrics: .zero
+            )
+            XCTAssertFalse(EffectQualificationPolicy.isEligibleForOther(
+                effectID: "com.example.fx",
+                descriptorSHA256: hash,
+                records: [record]
+            ))
+        }
+    }
 }
