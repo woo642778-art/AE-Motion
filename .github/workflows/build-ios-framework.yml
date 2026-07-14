@@ -2,7 +2,7 @@ name: Build iOS Extensions Framework
 on:
   workflow_dispatch:
   push:
-    branches: [ main, feature/v2.0.3a-effect-integrity ]
+    branches: [ main, feature/v2.0.3a-effect-integrity, feature/v2.1-project-reliability ]
   pull_request:
     branches: [ main ]
 jobs:
@@ -18,6 +18,8 @@ jobs:
         run: python3 scripts/test-normalize-effect-search-metadata.py -v
       - name: Verify effect integrity tooling
         run: python3 scripts/test-effect-integrity.py -v
+      - name: Verify Other category restoration
+        run: python3 scripts/test-other-category-restoration.py -v
       - name: Verify Swift 6 preset error isolation
         run: python3 scripts/test-preset-application-host-error-isolation.py
       - name: Verify native UI integration contract
