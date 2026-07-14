@@ -114,7 +114,12 @@ final class ProjectReliabilityViewController: UIViewController, UIDocumentPicker
     private func exportLatest(source: UIView?) {
         Task {
             do {
-                let id = latestProjectID ?? (try await store.listProjects().first?.id)
+                let id: UUID?
+                if let latestProjectID {
+                    id = latestProjectID
+                } else {
+                    id = try await store.listProjects().first?.id
+                }
                 guard let id else { throw ProjectStoreError.projectNotFound(UUID()) }
                 let data = try await store.exportDocument(id)
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent("AE-Motion-\(id.uuidString).\(ProjectSchema.fileExtension)")
