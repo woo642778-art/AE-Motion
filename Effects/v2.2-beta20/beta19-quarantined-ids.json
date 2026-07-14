@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "source": "AE-Motion-v2.2-beta19-static-verification.md",
+  "effectIDs": [
+    "com.alightcreative.effects.camera_lens_blur",
+    "com.alightcreative.effects.bccfilmglow",
+    "com.alightcreative.effects.bcchalation",
+    "com.alightcreative.effects.ccglow",
+    "com.creative.cinematic_bokeh",
+    "com.alightcreative.contourgrad",
+    "com.alightcreative.effects.full_image_soft_glow_mp",
+    "com.alightcreative.effects.depth_displacement",
+    "com.alightcreative.effects.prodiffusion",
+    "com.alightcreative.effects.circular_mask_blur",
+    "com.alightcreative.effects.lumakey",
+    "com.alightcreative.effects.lumakey2",
+    "com.alightcreative.effects.s_glow",
+    "com.alightcreative.effects.s_wipepixelate",
+    "com.alightcreative.effects.shatter_voronoi_mp",
+    "com.alightcreative.effects.fractaltexture"
+  ]
+}
