@@ -1,5 +1,23 @@
+import Foundation
 import XCTest
 @testable import AEMotionExtensionsCore
+
+private final class SendableIntBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [Int] = []
+
+    func append(_ value: Int) {
+        lock.lock()
+        storage.append(value)
+        lock.unlock()
+    }
+
+    func snapshot() -> [Int] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+}
 
 final class ContextualEditingTests: XCTestCase {
     func testPreviewTransactionCommitKeepsLatestValue() throws {
@@ -33,5 +51,17 @@ final class ContextualEditingTests: XCTestCase {
         try transaction.selectionDidChange()
         XCTAssertEqual(transaction.state, .cancelled)
         XCTAssertEqual(applied.last, 0.25)
+    }
+
+    func testCoalescerDeliversOnlyLatestPendingValueAndFinalFlush() async {
+        let coalescer = PreviewUpdateCoalescer<Int>()
+        let delivered = SendableIntBuffer()
+        await coalescer.enqueue(1)
+        await coalescer.enqueue(2)
+        await coalescer.flush { delivered.append($0) }
+        XCTAssertEqual(delivered.snapshot(), [2])
+        await coalescer.enqueue(3)
+        await coalescer.finish { delivered.append($0) }
+        XCTAssertEqual(delivered.snapshot(), [2, 3])
     }
 }
