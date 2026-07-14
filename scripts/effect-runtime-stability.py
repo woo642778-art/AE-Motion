@@ -15,12 +15,19 @@ from xml.etree import ElementTree as ET
 
 KNOWN_REPAIRS = {
     "com.alightcreative.effects.bccedgeglow": "bccedgeglow.xml",
+    "com.alightcreative.effects.bbmaker": "blackbars.xml",
 }
 LARGE_LOOP_RE = re.compile(r"for\s*\([^;]*;\s*[^;]*(?:<=|<)\s*(?:128|192|256|512)(?:\.0)?", re.I)
 ATTR_RE = re.compile(r"(?P<name>[A-Za-z_:][\w:.-]*)\s*=\s*(?P<quote>['\"])(?P<value>.*?)(?P=quote)", re.S)
 EFFECT_RE = re.compile(r"<effect\b(?P<attrs>[^>]*)>", re.I | re.S)
 SHADER_RE = re.compile(r"<shader\b[^>]*>(?P<body>.*?)</shader>", re.I | re.S)
 _VISUAL_MODULE = None
+DEVICE_GATED_VISUAL_CODES = {
+    "fixed_opaque_alpha",
+    "unbounded_texture_coordinates",
+    "zero_permitted_divisor",
+    "aspect_ratio_bounds_uncertain",
+}
 
 
 @dataclass(frozen=True)
@@ -119,8 +126,8 @@ def analyze(path: Path) -> tuple[str, list[RuntimeFinding]]:
             findings.append(RuntimeFinding("invalid_numeric_parameter", "error", f"{element.attrib.get('id', '?')} has malformed numeric metadata."))
 
     for visual in visual_module().analyze_descriptor_text(text):
-        severity = "error" if visual.get("confidence") == "high" else "warning"
         code = str(visual.get("code", "visual_risk"))
+        severity = "warning" if code in DEVICE_GATED_VISUAL_CODES else "error" if visual.get("confidence") == "high" else "warning"
         message = str(visual.get("message", "Visual qualification requires review."))
         if not any(item.code == code for item in findings):
             findings.append(RuntimeFinding(code, severity, message))
