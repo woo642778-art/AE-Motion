@@ -4,6 +4,7 @@ public enum ToolRegistry {
     public static let all: [ToolDescriptor] = [
         .init(id: "speed.remap", title: "Speed Remap Studio", subtitle: "Scroll-locked velocity graph, live preview, Photos import and timeline handoff", section: .extensions),
         .init(id: "easing.curve", title: "Easing Curve Generator", subtitle: "Flow-style editable curves with scroll locking, handles and presets", section: .extensions),
+        .init(id: "animation.core", title: "Animation Core", subtitle: "Unified keyframes, value and speed graphs, gesture recording and professional velocity", section: .extensions),
         .init(id: "cutout.person", title: "Person Cutout Studio", subtitle: "Vision cutout with manual selection, automatic tracking and transparent output", section: .extensions),
         .init(id: "depth.map", title: "Depth Map Studio", subtitle: "Automatic relative-depth video with temporal smoothing and timeline return", section: .extensions),
         .init(id: "dead.frames", title: "Dead Frame Cleaner", subtitle: "Detect and remove duplicate frames while keeping audio aligned", section: .extensions),
