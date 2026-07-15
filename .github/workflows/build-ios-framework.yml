@@ -19,7 +19,7 @@ on:
       - feature/v2.2-beta20-full-effect-restoration
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - name: Resolve package
