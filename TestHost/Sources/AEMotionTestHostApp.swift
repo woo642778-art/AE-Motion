@@ -16,7 +16,7 @@ private struct TestHostRootView: View {
     @State private var presentsExtensions = false
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             VStack(spacing: 18) {
                 Image(systemName: "wand.and.stars")
                     .font(.system(size: 52, weight: .semibold))
@@ -45,6 +45,7 @@ private struct TestHostRootView: View {
             .padding(24)
             .navigationTitle("Test Host")
         }
+        .navigationViewStyle(.stack)
         .fullScreenCover(isPresented: $presentsExtensions) {
             ExtensionsControllerContainer()
                 .ignoresSafeArea()
