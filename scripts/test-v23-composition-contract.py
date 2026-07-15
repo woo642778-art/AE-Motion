@@ -51,3 +51,10 @@ def test_live_preview_has_required_cancellation_and_commit_paths() -> None:
     assert "commitPostconditionFailed" in source
     assert "restoreAfterFailedCommit" in source
     assert "temporaryOverlay?.removeFromSuperview" in source
+
+
+if __name__ == "__main__":
+    tests = sorted((name, value) for name, value in globals().items() if name.startswith("test_") and callable(value))
+    for name, test in tests:
+        test()
+        print(f"PASS: {name}")
