@@ -118,6 +118,17 @@ public final class CompositionTransaction {
         try cancel(reason: .selectionChanged)
     }
 
+    public func restoreAfterFailedCommit(reason: CompositionRollbackReason) throws {
+        guard state == .committed else { throw CompositionTransactionError.notActive }
+        guard reason == .commitPostconditionFailed || reason == .hostContractInvalidated else {
+            throw CompositionTransactionError.commitIdentityMismatch
+        }
+        currentDocument = initialDocument
+        committedIntent = nil
+        rollbackReason = reason
+        state = .cancelled
+    }
+
     private func validate(_ document: CompositionDocument) throws {
         do {
             try CompositionValidator.validate(document)
