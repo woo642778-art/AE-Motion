@@ -80,3 +80,10 @@ def test_contextual_injector_installs_composition_editor_outside_extensions_hub(
     assert "aemotion.composition.inspector" in injector
     assert "CompositionEditingController" in injector
     assert "CompositionEditingController" not in factory
+
+
+if __name__ == "__main__":
+    tests = sorted((name, value) for name, value in globals().items() if name.startswith("test_") and callable(value))
+    for name, test in tests:
+        test()
+        print(f"PASS: {name}")
