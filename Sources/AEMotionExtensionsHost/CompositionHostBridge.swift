@@ -9,6 +9,7 @@ enum CompositionHostBridge {
         static let capabilities = "aemotionCompositionCapabilities"
         static let snapshot = "aemotionCompositionSnapshotJSON"
         static let document = "aemotionCompositionDocumentJSON"
+        static let setSelection = "aemotionSetSelectedLayerIdentifiersJSON:"
         static let preview = "aemotionPreviewCompositionDocumentJSON:"
         static let commit = "aemotionCommitCompositionIntentJSON:"
         static let rollback = "aemotionRollbackCompositionPreview"
@@ -89,6 +90,12 @@ enum CompositionHostBridge {
                   let document = try? JSONDecoder().decode(CompositionDocument.self, from: data),
                   (try? CompositionValidator.validate(document)) != nil else { return nil }
             return document
+        }
+
+        func setSelectedLayerIDs(_ ids: [UUID]) -> Bool {
+            guard verifiedCapabilities.contains(.mutateSelection),
+                  let data = try? JSONEncoder().encode(ids) else { return false }
+            return callBoolean(SelectorName.setSelection, object: data)
         }
 
         func preview(document: CompositionDocument) -> Bool {
