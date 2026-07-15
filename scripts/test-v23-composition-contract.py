@@ -30,3 +30,14 @@ def test_no_private_database_or_render_reimport_path() -> None:
     text = "\n".join(path.read_text(errors="ignore") for path in (ROOT / "Sources").rglob("*.swift")).lower()
     for forbidden in ["sqlite3_exec", "timeline.db", "project.db", "nspersistentstore", "avassetexportsession", "phphotolibrary"]:
         assert forbidden not in text
+
+
+def test_live_preview_has_required_cancellation_and_commit_paths() -> None:
+    source = read("Sources/AEMotionExtensionsHost/CompositionLivePreviewCoordinator.swift")
+    assert "CADisplayLink" in source
+    assert "selectionDidChange" in source
+    assert "applicationDidEnterBackground" in source
+    assert "verifyPostcondition" in source
+    assert "commitPostconditionFailed" in source
+    assert "restoreAfterFailedCommit" in source
+    assert "temporaryOverlay?.removeFromSuperview" in source
