@@ -57,6 +57,7 @@ struct HostCompositionSnapshot: Codable, Equatable, Sendable {
 protocol CompositionHostMutationAdapter: AnyObject {
     var verifiedCapabilities: Set<CompositionHostCapability> { get }
     var selectionIdentity: String { get }
+    var supportedBlendModeIDs: Set<String> { get }
     func snapshot() -> HostCompositionSnapshot?
     func readCompositionDocument() -> CompositionDocument?
     func setSelectedLayerIDs(_ ids: [UUID]) -> Bool
