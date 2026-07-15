@@ -9,6 +9,7 @@ enum CompositionHostBridge {
         static let capabilities = "aemotionCompositionCapabilities"
         static let snapshot = "aemotionCompositionSnapshotJSON"
         static let document = "aemotionCompositionDocumentJSON"
+        static let supportedBlendModes = "aemotionSupportedBlendModeIdentifiers"
         static let setSelection = "aemotionSetSelectedLayerIdentifiersJSON:"
         static let preview = "aemotionPreviewCompositionDocumentJSON:"
         static let commit = "aemotionCommitCompositionIntentJSON:"
@@ -55,6 +56,7 @@ enum CompositionHostBridge {
     private final class SelectorCompositionHostAdapter: CompositionHostMutationAdapter {
         private weak var controller: UIViewController?
         let verifiedCapabilities: Set<CompositionHostCapability>
+        let supportedBlendModeIDs: Set<String>
         private(set) var selectionIdentity: String
 
         init?(controller: UIViewController) {
@@ -68,6 +70,17 @@ enum CompositionHostBridge {
                   capabilities.contains(.readComposition),
                   capabilities.contains(.invalidatePreview) else {
                 return nil
+            }
+            if capabilities.contains(.blendModes) {
+                guard let rawIDs = CompositionHostBridge.object(
+                    controller,
+                    selector: SelectorName.supportedBlendModes
+                ) as? [String] else { return nil }
+                let verifiedIDs = Set(rawIDs.filter { BlendModeCatalogue.descriptor(id: $0) != nil })
+                guard !verifiedIDs.isEmpty else { return nil }
+                supportedBlendModeIDs = verifiedIDs
+            } else {
+                supportedBlendModeIDs = []
             }
             verifiedCapabilities = capabilities
             selectionIdentity = ""
