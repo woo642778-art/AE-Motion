@@ -8,6 +8,8 @@ public enum CompositionValidationError: Error, Equatable {
     case missingMatteSource(layerID: UUID, sourceID: UUID)
     case missingParent(layerID: UUID, parentID: UUID)
     case missingPrecomposition(layerID: UUID, compositionID: UUID)
+    case invalidLayerDependency(UUID)
+    case compositionDependencyCycle
 }
 
 public enum CompositionValidator {
@@ -61,6 +63,34 @@ public enum CompositionValidator {
                     )
                 }
             }
+            do {
+                _ = try CompositionGraph(composition: composition)
+            } catch {
+                throw CompositionValidationError.invalidLayerDependency(composition.id)
+            }
+        }
+
+        let compositionByID = Dictionary(uniqueKeysWithValues: document.compositions.map { ($0.id, $0) })
+        var permanent = Set<UUID>()
+        var temporary = Set<UUID>()
+        func visit(_ compositionID: UUID) throws {
+            if permanent.contains(compositionID) { return }
+            guard temporary.insert(compositionID).inserted else {
+                throw CompositionValidationError.compositionDependencyCycle
+            }
+            guard let composition = compositionByID[compositionID] else {
+                throw CompositionValidationError.missingRootComposition(compositionID)
+            }
+            for layer in composition.layers {
+                if case let .precomposition(childID) = layer.kind {
+                    try visit(childID)
+                }
+            }
+            temporary.remove(compositionID)
+            permanent.insert(compositionID)
+        }
+        for composition in document.compositions {
+            try visit(composition.id)
         }
     }
 }
