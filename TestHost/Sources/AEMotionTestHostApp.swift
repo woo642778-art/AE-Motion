@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import AEMotionExtensionsHost
 
 @main
@@ -10,6 +11,7 @@ struct AEMotionTestHostApp: App {
     }
 }
 
+@MainActor
 private struct TestHostRootView: View {
     @State private var presentsExtensions = false
 
@@ -50,6 +52,7 @@ private struct TestHostRootView: View {
     }
 }
 
+@MainActor
 private struct ExtensionsControllerContainer: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
         AEMotionTestHostBridge.makeExtensionsRootViewController()
