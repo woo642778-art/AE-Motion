@@ -28,6 +28,14 @@ checks = {
     "contextual injector": exists("Sources/AEMotionExtensionsHost/ContextualButtonInjector.swift"),
     "contextual editor": exists("Sources/AEMotionExtensionsHost/ContextualEditingViewController.swift"),
     "standalone animation studio removed": not exists("Sources/AEMotionExtensionsHost/AnimationStudioViewController.swift"),
+    "composition host contract": exists("Sources/AEMotionExtensionsHost/CompositionHostContract.swift"),
+    "composition host bridge": exists("Sources/AEMotionExtensionsHost/CompositionHostBridge.swift"),
+    "composition live preview": exists("Sources/AEMotionExtensionsHost/CompositionLivePreviewCoordinator.swift"),
+    "timeline multi selection": exists("Sources/AEMotionExtensionsHost/TimelineMultiSelectionController.swift"),
+    "composition inspector": exists("Sources/AEMotionExtensionsHost/CompositionInspectorViewController.swift"),
+    "precompose sheet": exists("Sources/AEMotionExtensionsHost/PrecomposeViewController.swift"),
+    "null group sheet": exists("Sources/AEMotionExtensionsHost/NullGroupViewController.swift"),
+    "composition editing controller": exists("Sources/AEMotionExtensionsHost/CompositionEditingController.swift"),
 }
 
 if checks["theme file"]:
@@ -50,6 +58,14 @@ bridge = read("Sources/AEMotionExtensionsHost/HostEditingContextBridge.swift")
 coordinator = read("Sources/AEMotionExtensionsHost/LivePreviewCoordinator.swift")
 injector = read("Sources/AEMotionExtensionsHost/ContextualButtonInjector.swift")
 context_ui = read("Sources/AEMotionExtensionsHost/ContextualEditingViewController.swift")
+composition_contract = read("Sources/AEMotionExtensionsHost/CompositionHostContract.swift")
+composition_bridge = read("Sources/AEMotionExtensionsHost/CompositionHostBridge.swift")
+composition_coordinator = read("Sources/AEMotionExtensionsHost/CompositionLivePreviewCoordinator.swift")
+timeline_selection = read("Sources/AEMotionExtensionsHost/TimelineMultiSelectionController.swift")
+composition_inspector = read("Sources/AEMotionExtensionsHost/CompositionInspectorViewController.swift")
+precompose_ui = read("Sources/AEMotionExtensionsHost/PrecomposeViewController.swift")
+null_group_ui = read("Sources/AEMotionExtensionsHost/NullGroupViewController.swift")
+composition_editing = read("Sources/AEMotionExtensionsHost/CompositionEditingController.swift")
 
 checks.update({
     "project editor hook candidates": "projectEditorControllerNames" in runtime,
@@ -82,6 +98,21 @@ checks.update({
     "no render reimport": "AVAssetExportSession" not in context_ui and "PHPhotoLibrary" not in context_ui,
     "independent utilities button": "aemotion.install.utilities" in injector,
     "legacy project button removed by injector": "aemotion.install.project.tools" in injector,
+    "composition capabilities explicit": "CompositionHostCapability" in composition_contract,
+    "composition exact blend semantics": "supportedBlendModeIDs" in composition_contract and "aemotionSupportedBlendModeIdentifiers" in composition_bridge,
+    "composition bridge validates graph": "CompositionValidator.validate" in composition_bridge,
+    "composition postcondition verification": "nativeDocument == intent.finalDocument" in composition_bridge,
+    "composition preview display link": "CADisplayLink" in composition_coordinator,
+    "composition rollback on background": "applicationDidEnterBackground" in composition_coordinator,
+    "timeline long press": "UILongPressGestureRecognizer" in timeline_selection,
+    "timeline precompose minimum": "selectedLayerIDs.count >= 2" in timeline_selection,
+    "composition inspector grouped blend": "BlendModeCatalogue" in composition_inspector,
+    "composition inspector pick whip": "UIPanGestureRecognizer" in composition_inspector,
+    "precompose live engine": "PrecomposeEngine.precompose" in precompose_ui and "coordinator.update" in precompose_ui,
+    "null group live engine": "NullGroupEngine.group" in null_group_ui and "coordinator.update" in null_group_ui,
+    "composition contextual routing": "TimelineMultiSelectionControllerDelegate" in composition_editing,
+    "composition injector": "installCompositionEditingIfNeeded" in injector and "aemotion.composition.inspector" in injector,
+    "composition absent from extensions factory": "CompositionEditingController" not in tool_factory,
 })
 
 require(tool_registry, '"effects.integrity"', "effect integrity tool", checks)
