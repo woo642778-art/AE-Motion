@@ -73,6 +73,25 @@ final class CompositionMutationTests: XCTestCase {
         XCTAssertEqual(document.compositions[0].layers.last?.kind, .null)
     }
 
+    func testNullCanBeInsertedImmediatelyAboveSelectedLayers() throws {
+        let background = CompositionLayer(name: "Background", kind: .image, timeRange: .init(start: 0, duration: 8))
+        let first = CompositionLayer(name: "A", kind: .video, timeRange: .init(start: 2, duration: 3))
+        let second = CompositionLayer(name: "B", kind: .shape, timeRange: .init(start: 3, duration: 4))
+        let foreground = CompositionLayer(name: "Foreground", kind: .text, timeRange: .init(start: 0, duration: 8))
+        let root = Composition(name: "Root", duration: 8, layers: [background, first, second, foreground])
+        var document = CompositionDocument(rootCompositionID: root.id, compositions: [root])
+
+        let nullID = try CompositionMutationEngine.addNull(
+            name: "Null Group",
+            timeRange: .init(start: 2, duration: 5),
+            insertionIndex: 1,
+            compositionID: root.id,
+            document: &document
+        )
+
+        XCTAssertEqual(document.compositions[0].layers.map(\.id), [background.id, nullID, first.id, second.id, foreground.id])
+    }
+
     func testUnknownBlendModeFailsWithoutMutation() {
         let layer = CompositionLayer(name: "A", kind: .video, timeRange: .init(start: 0, duration: 5))
         let root = Composition(name: "Root", duration: 5, layers: [layer])
