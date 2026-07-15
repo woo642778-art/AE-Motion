@@ -92,6 +92,7 @@ public struct CompositionLayer: Codable, Equatable, Sendable, Identifiable {
     public var blendModeID: String
     public var alphaInterpretation: AlphaInterpretation
     public var channelMapping: ChannelMapping
+    public var isAlphaInverted: Bool
     public var matte: MatteBinding?
     public var parent: ParentBinding?
     public var isEnabled: Bool
@@ -106,6 +107,7 @@ public struct CompositionLayer: Codable, Equatable, Sendable, Identifiable {
         blendModeID: String = "normal",
         alphaInterpretation: AlphaInterpretation = .straight,
         channelMapping: ChannelMapping = .identity,
+        isAlphaInverted: Bool = false,
         matte: MatteBinding? = nil,
         parent: ParentBinding? = nil,
         isEnabled: Bool = true,
@@ -119,6 +121,7 @@ public struct CompositionLayer: Codable, Equatable, Sendable, Identifiable {
         self.blendModeID = blendModeID
         self.alphaInterpretation = alphaInterpretation
         self.channelMapping = channelMapping
+        self.isAlphaInverted = isAlphaInverted
         self.matte = matte
         self.parent = parent
         self.isEnabled = isEnabled
