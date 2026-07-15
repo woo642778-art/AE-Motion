@@ -9,12 +9,14 @@ on:
       - feature/v2.2-animation-core-effect-stability
       - feature/v2.2-beta19-contextual-live-preview
       - feature/v2.2-beta20-full-effect-restoration
+      - feature/v2.3-matte-alpha-blend-composition
   pull_request:
     branches:
       - main
       - feature/v2.1-project-reliability
       - feature/v2.2-animation-core-effect-stability
       - feature/v2.2-beta19-contextual-live-preview
+      - feature/v2.2-beta20-full-effect-restoration
 jobs:
   build:
     runs-on: macos-15
@@ -53,23 +55,16 @@ jobs:
         run: python3 scripts/test-preset-application-host-error-isolation.py
       - name: Verify native UI integration contract
         run: python3 scripts/test-ui-integration-contract.py
+      - name: Verify v2.3 composition host contract
+        run: python3 scripts/test-v23-composition-contract.py
+      - name: Verify v2.3 contextual UI contract
+        run: python3 scripts/test-v23-ui-contract.py
       - name: Verify category proxy Swift 6 isolation
         run: python3 scripts/test-category-collection-proxy-isolation.py
       - name: Verify category proxy index-path forwarding
         run: python3 scripts/test-category-proxy-indexpath-forwarding.py
-      - name: Parse Beta 20 Swift sources
-        run: |
-          swiftc -frontend -parse Sources/AEMotionExtensionsCore/SafeToolRegistry.swift
-          swiftc -frontend -parse Sources/AEMotionExtensionsHost/EffectIntegrityStore.swift
-          swiftc -frontend -parse Sources/AEMotionExtensionsHost/EffectIntegrityViewController.swift
-          swiftc -frontend -parse Sources/AEMotionExtensionsHost/HostEditingContextBridge.swift
-          swiftc -frontend -parse Sources/AEMotionExtensionsHost/LivePreviewCoordinator.swift
-          swiftc -frontend -parse Sources/AEMotionExtensionsHost/ContextualButtonInjector.swift
-          swiftc -frontend -parse Sources/AEMotionExtensionsHost/ContextualEditingViewController.swift
-          swiftc -frontend -parse Sources/AEMotionExtensionsHost/UnavailableToolViewController.swift
-          swiftc -frontend -parse Sources/AEMotionExtensionsHost/ToolPresentationGuard.swift
-          swiftc -frontend -parse Sources/AEMotionExtensionsHost/ToolControllerFactory.swift
-          swiftc -frontend -parse Sources/AEMotionExtensionsHost/ExtensionsViewController.swift
+      - name: Parse all Swift sources
+        run: find Sources -name '*.swift' -print0 | xargs -0 -n 1 swiftc -frontend -parse
       - name: Build iOS framework
         id: ios_build
         continue-on-error: true
@@ -89,7 +84,7 @@ jobs:
         run: |
           mkdir -p artifacts
           find build/DerivedData/Build/Products -name 'AEMotionExtensionsHost.framework' -type d -exec ditto -c -k --sequesterRsrc --keepParent {} artifacts/AEMotionExtensionsHost-framework.zip \;
-          zip -qry artifacts/AE-Motion-v2.2-beta20-source.zip Sources Tests scripts Effects docs Package.swift
+          zip -qry artifacts/AE-Motion-v2.3-composition-source.zip Sources Tests scripts Effects docs Package.swift
       - uses: actions/upload-artifact@v4
         with:
           name: AEMotionExtensionsHost-iOS
