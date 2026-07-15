@@ -5,6 +5,8 @@ import AEMotionExtensionsCore
 
 nonisolated(unsafe) private var contextualButtonsKey: UInt8 = 0
 nonisolated(unsafe) private var utilitiesButtonKey: UInt8 = 0
+nonisolated(unsafe) private var compositionEditingControllerKey: UInt8 = 0
+nonisolated(unsafe) private var compositionButtonKey: UInt8 = 0
 
 @MainActor
 enum ContextualButtonInjector {
@@ -61,6 +63,7 @@ enum ContextualButtonInjector {
             installed[descriptor.id] = button
         }
         objc_setAssociatedObject(presenter, &contextualButtonsKey, installed, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        installCompositionEditingIfNeeded(in: presenter)
     }
 
     private static func makeButton(
@@ -112,6 +115,47 @@ enum ContextualButtonInjector {
             button.trailingAnchor.constraint(equalTo: anchor.trailingAnchor),
             button.bottomAnchor.constraint(equalTo: anchor.topAnchor, constant: -4),
         ])
+    }
+
+    static func installCompositionEditingIfNeeded(in presenter: UIViewController) {
+        guard objc_getAssociatedObject(presenter, &compositionEditingControllerKey) == nil else { return }
+        let required: Set<CompositionHostCapability> = [
+            .readSelection,
+            .readLayerIdentity,
+            .readComposition,
+            .mutateSelection,
+            .previewComposition,
+            .invalidatePreview,
+        ]
+        guard let session = CompositionHostBridge.resolve(in: presenter, requiring: required) else { return }
+        let featureCapabilities: Set<CompositionHostCapability> = [
+            .structuralPrecompose,
+            .structuralParenting,
+            .structuralMatte,
+            .blendModes,
+            .channelAlpha,
+        ]
+        guard !session.adapter.verifiedCapabilities.intersection(featureCapabilities).isEmpty else { return }
+
+        let controller = CompositionEditingController(session: session, presenter: presenter)
+        controller.install()
+        objc_setAssociatedObject(
+            presenter,
+            &compositionEditingControllerKey,
+            controller,
+            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
+
+        let button = UIButton(type: .system)
+        button.accessibilityIdentifier = "aemotion.composition.inspector"
+        button.accessibilityLabel = "Compositing"
+        button.setImage(UIImage(systemName: "square.3.layers.3d"), for: .normal)
+        button.addTarget(controller, action: #selector(CompositionEditingController.presentInspectorForCurrentSelection), for: .touchUpInside)
+        let item = UIBarButtonItem(customView: button)
+        var items = presenter.navigationItem.rightBarButtonItems ?? []
+        items.append(item)
+        presenter.navigationItem.rightBarButtonItems = items
+        objc_setAssociatedObject(presenter, &compositionButtonKey, item, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
 
     static func installUtilitiesButtonIfNeeded(in presenter: UIViewController) {
