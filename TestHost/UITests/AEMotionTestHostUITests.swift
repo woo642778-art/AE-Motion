@@ -1,5 +1,6 @@
 import XCTest
 
+@MainActor
 final class AEMotionTestHostUITests: XCTestCase {
     private var app: XCUIApplication!
 
