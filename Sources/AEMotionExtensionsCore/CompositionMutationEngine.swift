@@ -6,6 +6,7 @@ public enum CompositionMutationError: Error, Equatable {
     case unsupportedBlendMode(String)
     case emptySelection
     case emptyName
+    case invalidInsertionIndex(Int)
 }
 
 public enum CompositionMutationEngine {
@@ -80,6 +81,8 @@ public enum CompositionMutationEngine {
     public static func addNull(
         name: String,
         timeRange: CompositionTimeRange,
+        transform: CompositionTransform = .identity,
+        insertionIndex: Int? = nil,
         compositionID: UUID,
         document: inout CompositionDocument
     ) throws -> UUID {
@@ -87,8 +90,21 @@ public enum CompositionMutationEngine {
         guard !trimmed.isEmpty else { throw CompositionMutationError.emptyName }
         var candidate = document
         let index = try compositionIndex(compositionID, in: candidate)
-        let layer = CompositionLayer(name: trimmed, kind: .null, timeRange: timeRange)
-        candidate.compositions[index].layers.append(layer)
+        let layer = CompositionLayer(
+            name: trimmed,
+            kind: .null,
+            timeRange: timeRange,
+            transform: transform
+        )
+        if let insertionIndex {
+            guard candidate.compositions[index].layers.indices.contains(insertionIndex)
+                    || insertionIndex == candidate.compositions[index].layers.endIndex else {
+                throw CompositionMutationError.invalidInsertionIndex(insertionIndex)
+            }
+            candidate.compositions[index].layers.insert(layer, at: insertionIndex)
+        } else {
+            candidate.compositions[index].layers.append(layer)
+        }
         try CompositionValidator.validate(candidate)
         document = candidate
         return layer.id
