@@ -87,6 +87,8 @@ public struct CompositionLayer: Codable, Equatable, Sendable, Identifiable {
     public var timeRange: CompositionTimeRange
     public var transform: CompositionTransform
     public var blendModeID: String
+    public var alphaInterpretation: AlphaInterpretation
+    public var channelMapping: ChannelMapping
     public var matte: MatteBinding?
     public var parent: ParentBinding?
     public var isEnabled: Bool
@@ -99,6 +101,8 @@ public struct CompositionLayer: Codable, Equatable, Sendable, Identifiable {
         timeRange: CompositionTimeRange,
         transform: CompositionTransform = .identity,
         blendModeID: String = "normal",
+        alphaInterpretation: AlphaInterpretation = .straight,
+        channelMapping: ChannelMapping = .identity,
         matte: MatteBinding? = nil,
         parent: ParentBinding? = nil,
         isEnabled: Bool = true,
@@ -110,6 +114,8 @@ public struct CompositionLayer: Codable, Equatable, Sendable, Identifiable {
         self.timeRange = timeRange
         self.transform = transform
         self.blendModeID = blendModeID
+        self.alphaInterpretation = alphaInterpretation
+        self.channelMapping = channelMapping
         self.matte = matte
         self.parent = parent
         self.isEnabled = isEnabled
