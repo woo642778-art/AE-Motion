@@ -19,6 +19,16 @@ def test_composition_bridge_is_fail_closed() -> None:
     assert "return nil" in bridge
 
 
+def test_timeline_selection_requires_explicit_host_contract() -> None:
+    contract = read("Sources/AEMotionExtensionsHost/CompositionHostContract.swift")
+    bridge = read("Sources/AEMotionExtensionsHost/CompositionHostBridge.swift")
+    assert "HostTimelineFrame" in contract
+    assert "case mutateSelection" in contract
+    assert "setSelectedLayerIDs" in contract
+    assert "aemotionSetSelectedLayerIdentifiersJSON:" in bridge
+    assert "verifiedCapabilities.contains(.mutateSelection)" in bridge
+
+
 def test_structural_commit_requires_postcondition_verification() -> None:
     bridge = read("Sources/AEMotionExtensionsHost/CompositionHostBridge.swift")
     assert "verifyPostcondition" in bridge
