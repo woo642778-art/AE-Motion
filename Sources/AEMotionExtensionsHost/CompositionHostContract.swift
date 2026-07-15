@@ -8,6 +8,7 @@ enum CompositionHostCapability: String, Codable, CaseIterable, Hashable, Sendabl
     case readSelection
     case readLayerIdentity
     case readComposition
+    case mutateSelection
     case previewComposition
     case invalidatePreview
     case structuralPrecompose
@@ -17,11 +18,23 @@ enum CompositionHostCapability: String, Codable, CaseIterable, Hashable, Sendabl
     case channelAlpha
 }
 
+struct HostTimelineFrame: Codable, Hashable, Sendable {
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+
+    func contains(_ point: CGPoint) -> Bool {
+        point.x >= x && point.x <= x + width && point.y >= y && point.y <= y + height
+    }
+}
+
 struct HostLayerHandle: Codable, Hashable, Sendable, Identifiable {
     let id: UUID
     let displayName: String
     let isLocked: Bool
     let isCompatible: Bool
+    let timelineFrame: HostTimelineFrame?
 }
 
 struct HostCompositionSnapshot: Codable, Equatable, Sendable {
@@ -46,6 +59,7 @@ protocol CompositionHostMutationAdapter: AnyObject {
     var selectionIdentity: String { get }
     func snapshot() -> HostCompositionSnapshot?
     func readCompositionDocument() -> CompositionDocument?
+    func setSelectedLayerIDs(_ ids: [UUID]) -> Bool
     func preview(document: CompositionDocument) -> Bool
     func commit(intent: CompositionCommandIntent) -> Bool
     func rollback() -> Bool
