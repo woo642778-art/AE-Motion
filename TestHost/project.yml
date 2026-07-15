@@ -1,0 +1,69 @@
+name: AEMotionTestHost
+
+options:
+  minimumXcodeGenVersion: 2.44.1
+  bundleIdPrefix: com.aemotion
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+
+packages:
+  AEMotionExtensions:
+    path: ..
+
+targets:
+  AEMotionTestHost:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    dependencies:
+      - package: AEMotionExtensions
+        product: AEMotionExtensionsHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aemotion.testhost
+        PRODUCT_NAME: AEMotionTestHost
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: AE Motion Test Host
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+    scheme:
+      testTargets:
+        - AEMotionTestHostTests
+        - AEMotionTestHostUITests
+      gatherCoverageData: true
+      management:
+        shared: true
+
+  AEMotionTestHostTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: AEMotionTestHost
+      - package: AEMotionExtensions
+        product: AEMotionExtensionsHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aemotion.testhost.tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+
+  AEMotionTestHostUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: AEMotionTestHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aemotion.testhost.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+        TEST_TARGET_NAME: AEMotionTestHost

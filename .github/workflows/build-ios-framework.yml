@@ -1,34 +1,91 @@
 name: Build iOS Extensions Framework
+
 on:
   workflow_dispatch:
+  pull_request:
   push:
-    branches: [ main ]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-regression-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    runs-on: macos-15
+  source-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Swift 6
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.0"
+
       - name: Resolve package
         run: swift package resolve
+
       - name: Run core tests
         run: swift test
+
       - name: Run effect metadata tests
         run: python3 scripts/test-normalize-effect-search-metadata.py -v
+
       - name: Verify Swift 6 preset error isolation
         run: python3 scripts/test-preset-application-host-error-isolation.py
+
       - name: Verify native UI integration contract
         run: python3 scripts/test-ui-integration-contract.py
+
       - name: Verify category proxy Swift 6 isolation
         run: python3 scripts/test-category-collection-proxy-isolation.py
+
       - name: Verify category proxy index-path forwarding
         run: python3 scripts/test-category-proxy-indexpath-forwarding.py
+
+  ios-regression:
+    needs: source-validation
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+          swift --version
+
+      - name: Install test tooling
+        run: brew install xcodegen xcbeautify
+
       - name: Build iOS framework
-        run: ./scripts/build-ios-framework.sh
-      - name: Collect products
+        run: bash scripts/build-ios-framework.sh
+
+      - name: Run Simulator host unit and UI tests
+        run: bash scripts/test-ios-simulator.sh
+
+      - name: Collect framework product
+        if: always()
         run: |
           mkdir -p artifacts
-          find build/DerivedData/Build/Products -name 'AEMotionExtensionsHost.framework' -type d -exec ditto -c -k --sequesterRsrc --keepParent {} artifacts/AEMotionExtensionsHost-framework.zip \;
-      - uses: actions/upload-artifact@v4
+          find build/DerivedData/Build/Products \
+            -name 'AEMotionExtensionsHost.framework' \
+            -type d \
+            -exec ditto -c -k --sequesterRsrc --keepParent {} artifacts/AEMotionExtensionsHost-framework.zip \; || true
+
+      - name: Upload framework and test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: AEMotionExtensionsHost-iOS
-          path: artifacts/*
+          name: AEMotionExtensions-iOS-regression
+          if-no-files-found: warn
+          path: |
+            artifacts/*
+            build/TestHostResults/AEMotionTestHost.xcresult
+            build/TestHostResults/xcodebuild.log
