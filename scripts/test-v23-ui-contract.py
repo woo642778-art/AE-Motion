@@ -49,3 +49,34 @@ def test_host_declares_exact_supported_blend_ids() -> None:
     bridge = read("Sources/AEMotionExtensionsHost/CompositionHostBridge.swift")
     assert "supportedBlendModeIDs" in contract
     assert "aemotionSupportedBlendModeIdentifiers" in bridge
+
+
+def test_null_group_is_live_atomic_and_world_preserving() -> None:
+    source = read("Sources/AEMotionExtensionsHost/NullGroupViewController.swift")
+    engine = read("Sources/AEMotionExtensionsCore/NullGroupEngine.swift")
+    assert "NullGroupEngine.group" in source
+    assert "CompositionMutationEngine.addNull" in engine
+    assert "insertionIndex" in engine
+    assert "CompositionMutationEngine.setParent" in engine
+    assert "CompositionLivePreviewCoordinator" in source
+    assert "coordinator.update" in source
+    assert "coordinator.commit" in source
+    assert "coordinator.cancel" in source
+
+
+def test_composition_editing_controller_routes_contextual_actions() -> None:
+    source = read("Sources/AEMotionExtensionsHost/CompositionEditingController.swift")
+    assert "TimelineMultiSelectionControllerDelegate" in source
+    assert "PrecomposeViewController" in source
+    assert "CompositionInspectorViewController" in source
+    assert "NullGroupViewController" in source
+    assert "presentInspectorForCurrentSelection" in source
+
+
+def test_contextual_injector_installs_composition_editor_outside_extensions_hub() -> None:
+    injector = read("Sources/AEMotionExtensionsHost/ContextualButtonInjector.swift")
+    factory = read("Sources/AEMotionExtensionsHost/ToolControllerFactory.swift")
+    assert "installCompositionEditingIfNeeded" in injector
+    assert "aemotion.composition.inspector" in injector
+    assert "CompositionEditingController" in injector
+    assert "CompositionEditingController" not in factory
