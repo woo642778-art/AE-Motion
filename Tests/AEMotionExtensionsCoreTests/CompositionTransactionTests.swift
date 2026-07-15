@@ -83,6 +83,20 @@ final class CompositionTransactionTests: XCTestCase {
         }
     }
 
+    func testFailedHostCommitCanRestoreCommittedTransaction() throws {
+        let (initial, rootID) = makeDocument()
+        let transaction = CompositionTransaction(initialDocument: initial, selectionIdentity: "one")
+        try transaction.begin()
+        try transaction.update { $0.compositions[0].name = "Changed" }
+        _ = try transaction.commit(label: "Commit", affectedCompositionID: rootID)
+
+        try transaction.restoreAfterFailedCommit(reason: .commitPostconditionFailed)
+
+        XCTAssertEqual(transaction.state, .cancelled)
+        XCTAssertEqual(transaction.rollbackReason, .commitPostconditionFailed)
+        XCTAssertEqual(transaction.currentDocument, initial)
+    }
+
     private func makeDocument() -> (CompositionDocument, UUID) {
         let root = Composition(name: "Root", duration: 5)
         return (CompositionDocument(rootCompositionID: root.id, compositions: [root]), root.id)
