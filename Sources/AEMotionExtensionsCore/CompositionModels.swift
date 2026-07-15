@@ -20,6 +20,7 @@ public struct CompositionTransform: Codable, Equatable, Sendable {
     public var scaleX: Double
     public var scaleY: Double
     public var rotationDegrees: Double
+    public var skewDegrees: Double
     public var opacity: Double
 
     public init(
@@ -30,6 +31,7 @@ public struct CompositionTransform: Codable, Equatable, Sendable {
         scaleX: Double = 1,
         scaleY: Double = 1,
         rotationDegrees: Double = 0,
+        skewDegrees: Double = 0,
         opacity: Double = 1
     ) {
         self.positionX = positionX
@@ -39,6 +41,7 @@ public struct CompositionTransform: Codable, Equatable, Sendable {
         self.scaleX = scaleX
         self.scaleY = scaleY
         self.rotationDegrees = rotationDegrees
+        self.skewDegrees = skewDegrees
         self.opacity = opacity
     }
 
