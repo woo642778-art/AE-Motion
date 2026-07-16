@@ -101,10 +101,10 @@ enum HostEditingContextBridge {
             !$0.isHidden && $0.alpha > 0.01 && $0.isEnabled && $0.window != nil
         }
         guard !matched.isEmpty, !sliders.isEmpty,
-              let preview = previewCandidate(in: views, excluding: Set(sliders.map(ObjectIdentifier.init))) else {
+              let preview = previewCandidate(in: views, excluding: Set(sliders.map(ObjectIdentifier.init))),
+              let anchor = sliders.first?.superview ?? controller.view else {
             return nil
         }
-        let anchor = sliders.first?.superview ?? controller.view
         let selectionObject: AnyObject = anchor
         let contract = HostEditingContract(
             context: context,
