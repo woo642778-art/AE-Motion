@@ -9,6 +9,9 @@ enum HostBootstrapCoordinator {
 
     private static var started = false
     private static var attemptCount = 0
+    private static var runtimeInstalled = false
+    private static var contextualInstalled = false
+    private static var authInstalled = false
     private static var pendingRetry: DispatchWorkItem?
     private static var observerTokens: [NSObjectProtocol] = []
 
@@ -63,9 +66,15 @@ enum HostBootstrapCoordinator {
     private static func attemptInstall() {
         attemptCount += 1
 
-        let runtimeInstalled = RuntimeResolver.install()
-        let contextualInstalled = ContextualButtonInjector.installRuntimeHook()
-        let authInstalled = GoogleSignInCallbackRepair.install()
+        if !runtimeInstalled {
+            runtimeInstalled = RuntimeResolver.install()
+        }
+        if !contextualInstalled {
+            contextualInstalled = ContextualButtonInjector.installRuntimeHook()
+        }
+        if !authInstalled {
+            authInstalled = GoogleSignInCallbackRepair.install()
+        }
 
         if runtimeInstalled && contextualInstalled && authInstalled {
             pendingRetry = nil
