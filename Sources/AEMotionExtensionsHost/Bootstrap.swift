@@ -7,6 +7,8 @@ public func AEMotionExtensionsInstall() {
         RenderTemporaryFiles.cleanupStaleFiles()
     }
     _ = RuntimeResolver.install()
-    _ = ContextualButtonInjector.installRuntimeHook()
+    Task { @MainActor in
+        _ = ContextualButtonInjector.installRuntimeHook()
+    }
 #endif
 }
