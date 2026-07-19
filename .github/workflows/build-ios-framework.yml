@@ -9,12 +9,14 @@ on:
       - feature/v2.2-animation-core-effect-stability
       - feature/v2.2-beta19-contextual-live-preview
       - feature/v2.2-beta20-full-effect-restoration
+      - feature/v2.3-stabilization-batch-a
   pull_request:
     branches:
       - main
       - feature/v2.1-project-reliability
       - feature/v2.2-animation-core-effect-stability
       - feature/v2.2-beta19-contextual-live-preview
+      - feature/v2.2-beta20-full-effect-restoration
 jobs:
   build:
     runs-on: macos-15
@@ -57,7 +59,9 @@ jobs:
         run: python3 scripts/test-category-collection-proxy-isolation.py
       - name: Verify category proxy index-path forwarding
         run: python3 scripts/test-category-proxy-indexpath-forwarding.py
-      - name: Parse Beta 20 Swift sources
+      - name: Verify v2.3 Batch A contracts
+        run: python3 scripts/test-v23-batch-a-contract.py -v
+      - name: Parse Beta 20 and Batch A Swift sources
         run: |
           swiftc -frontend -parse Sources/AEMotionExtensionsCore/SafeToolRegistry.swift
           swiftc -frontend -parse Sources/AEMotionExtensionsHost/EffectIntegrityStore.swift
@@ -70,6 +74,10 @@ jobs:
           swiftc -frontend -parse Sources/AEMotionExtensionsHost/ToolPresentationGuard.swift
           swiftc -frontend -parse Sources/AEMotionExtensionsHost/ToolControllerFactory.swift
           swiftc -frontend -parse Sources/AEMotionExtensionsHost/ExtensionsViewController.swift
+          swiftc -frontend -parse Sources/AEMotionExtensionsHost/HostBootstrapCoordinator.swift
+          swiftc -frontend -parse Sources/AEMotionExtensionsHost/GoogleSignInCallbackRepair.swift
+          swiftc -frontend -parse Sources/AEMotionExtensionsHost/AuthenticationTimeoutGuard.swift
+          swiftc -frontend -parse Sources/AEMotionExtensionsHost/WatermarkStateRefresh.swift
       - name: Build iOS framework
         id: ios_build
         continue-on-error: true
@@ -89,7 +97,7 @@ jobs:
         run: |
           mkdir -p artifacts
           find build/DerivedData/Build/Products -name 'AEMotionExtensionsHost.framework' -type d -exec ditto -c -k --sequesterRsrc --keepParent {} artifacts/AEMotionExtensionsHost-framework.zip \;
-          zip -qry artifacts/AE-Motion-v2.2-beta20-source.zip Sources Tests scripts Effects docs Package.swift
+          zip -qry artifacts/AE-Motion-v2.3-batch-a-source.zip Sources Tests scripts Effects docs Package.swift
       - uses: actions/upload-artifact@v4
         with:
           name: AEMotionExtensionsHost-iOS
