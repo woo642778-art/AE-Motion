@@ -6,6 +6,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 resolver = (ROOT / "Sources/AEMotionUI271Host/AEMotionRuntimeResolver.swift").read_text(encoding="utf-8")
 adapter = (ROOT / "Sources/AEMotionUI271Host/AEMotionHostSurfaceAdapter.swift").read_text(encoding="utf-8")
+coordinator = (ROOT / "Sources/AEMotionUI271Host/AEMotionProjectActionCoordinator.swift").read_text(encoding="utf-8")
 installer = (ROOT / "Sources/AEMotionUI271Host/AEMotionUI271Installer.swift").read_text(encoding="utf-8")
 
 checks = {
@@ -14,13 +15,13 @@ checks = {
     "templates allowlist": (resolver, r'AlightMotion\.TemplatesVC'),
     "associated ownership": (resolver, r'objc_(get|set)AssociatedObject'),
     "exact runtime lookup": (resolver, r'NSClassFromString'),
-    "legacy action forwarding": (adapter, r'sendActions\(for:\s*\.touchUpInside\)'),
+    "legacy action forwarding": (coordinator, r'sendActions\(for:\s*\.touchUpInside\)'),
     "known identifier capture": (adapter, r'aemotion\.home\.'),
-    "owned overlay cleanup": (adapter, r'hasPrefix\("aemotion\."\)'),
+    "owned overlay cleanup": (adapter, r'hasPrefix\("aemotion\.home\."\)'),
     "contrast normalization": (adapter, r'normalizeTextContrast'),
     "shell root attach": (resolver, r'shell\.attach\(to:'),
     "nonroot hide": (resolver, r'openNonRoot'),
-    "direct 2.7.2 installer": (installer, r'@_cdecl\("AEMotionUI272Install"\).*installRuntimeHooks'),
+    "direct 2.7.2 installer": (installer, r'@_cdecl\("AEMotionUI272Install"\).*AEMotionRuntimeResolver\.install'),
 }
 
 failed = [name for name, (content, pattern) in checks.items() if re.search(pattern, content, re.S) is None]
