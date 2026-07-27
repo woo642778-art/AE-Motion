@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+from dataclasses import dataclass
+import struct
+
+MH_MAGIC_64 = 0xFEEDFACF
+CPU_TYPE_ARM64 = 0x0100000C
+LC_SEGMENT_64 = 0x19
+LC_LOAD_DYLIB = 0x0C
+LC_LOAD_WEAK_DYLIB = 0x80000018
+LC_REEXPORT_DYLIB = 0x8000001F
+LC_LOAD_UPWARD_DYLIB = 0x80000023
+DYLIB_COMMANDS = {
+    LC_LOAD_DYLIB,
+    LC_LOAD_WEAK_DYLIB,
+    LC_REEXPORT_DYLIB,
+    LC_LOAD_UPWARD_DYLIB,
+}
+HEADER_SIZE_64 = 32
+SECTION_SIZE_64 = 80
+SEGMENT_COMMAND_SIZE_64 = 72
+
+
+class MachOError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class LoadCommand:
+    cmd: int
+    cmdsize: int
+    offset: int
+    payload: bytes
+
+
+@dataclass(frozen=True)
+class MachOInfo:
+    ncmds: int
+    sizeofcmds: int
+    command_end: int
+    first_section_offset: int
+    dylib_paths: tuple[str, ...]
+    commands: tuple[LoadCommand, ...]
+
+
+def _align(value: int, alignment: int = 8) -> int:
+    return (value + alignment - 1) & ~(alignment - 1)
+
+
+def _read_c_string(data: bytes, start: int, end: int) -> str:
+    if start < 0 or start >= end or end > len(data):
+        raise MachOError("invalid Mach-O string range")
+    raw = data[start:end].split(b"\0", 1)[0]
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise MachOError("invalid UTF-8 dylib path") from error
+
+
+def inspect_macho(binary: bytes) -> MachOInfo:
+    if len(binary) < HEADER_SIZE_64:
+        raise MachOError("Mach-O is smaller than mach_header_64")
+    magic, cputype, _cpusubtype, _filetype, ncmds, sizeofcmds, _flags, _reserved = struct.unpack_from(
+        "<IiiIIIII", binary, 0
+    )
+    if magic != MH_MAGIC_64:
+        raise MachOError("expected a thin little-endian 64-bit Mach-O")
+    if cputype != CPU_TYPE_ARM64:
+        raise MachOError("expected a thin arm64 Mach-O")
+    command_end = HEADER_SIZE_64 + sizeofcmds
+    if command_end > len(binary):
+        raise MachOError("load commands exceed file size")
+
+    commands: list[LoadCommand] = []
+    dylib_paths: list[str] = []
+    first_section_offset: int | None = None
+    cursor = HEADER_SIZE_64
+
+    for _ in range(ncmds):
+        if cursor + 8 > command_end:
+            raise MachOError("truncated load command header")
+        cmd, cmdsize = struct.unpack_from("<II", binary, cursor)
+        if cmdsize < 8 or cmdsize % 4 != 0:
+            raise MachOError("invalid load command size")
+        next_cursor = cursor + cmdsize
+        if next_cursor > command_end:
+            raise MachOError("load command exceeds sizeofcmds")
+        payload = binary[cursor:next_cursor]
+        commands.append(LoadCommand(cmd=cmd, cmdsize=cmdsize, offset=cursor, payload=payload))
+
+        if cmd == LC_SEGMENT_64:
+            if cmdsize < SEGMENT_COMMAND_SIZE_64:
+                raise MachOError("truncated LC_SEGMENT_64")
+            nsects = struct.unpack_from("<I", binary, cursor + 64)[0]
+            expected_minimum = SEGMENT_COMMAND_SIZE_64 + nsects * SECTION_SIZE_64
+            if cmdsize < expected_minimum:
+                raise MachOError("LC_SEGMENT_64 sections exceed command size")
+            section_cursor = cursor + SEGMENT_COMMAND_SIZE_64
+            for _section_index in range(nsects):
+                section_offset = struct.unpack_from("<I", binary, section_cursor + 48)[0]
+                section_size = struct.unpack_from("<Q", binary, section_cursor + 40)[0]
+                if section_offset > 0 and section_size > 0:
+                    if first_section_offset is None or section_offset < first_section_offset:
+                        first_section_offset = section_offset
+                section_cursor += SECTION_SIZE_64
+
+        if cmd in DYLIB_COMMANDS:
+            if cmdsize < 24:
+                raise MachOError("truncated dylib command")
+            name_offset = struct.unpack_from("<I", binary, cursor + 8)[0]
+            if name_offset < 24 or name_offset >= cmdsize:
+                raise MachOError("invalid dylib name offset")
+            dylib_paths.append(_read_c_string(binary, cursor + name_offset, next_cursor))
+
+        cursor = next_cursor
+
+    if cursor != command_end:
+        raise MachOError("ncmds does not consume sizeofcmds exactly")
+    if first_section_offset is None:
+        raise MachOError("no file-backed Mach-O section found")
+    if first_section_offset < command_end:
+        raise MachOError("first section overlaps load commands")
+
+    return MachOInfo(
+        ncmds=ncmds,
+        sizeofcmds=sizeofcmds,
+        command_end=command_end,
+        first_section_offset=first_section_offset,
+        dylib_paths=tuple(dylib_paths),
+        commands=tuple(commands),
+    )
+
+
+def make_load_dylib_command(dylib_path: str) -> bytes:
+    if not dylib_path or "\0" in dylib_path:
+        raise MachOError("invalid dylib path")
+    encoded = dylib_path.encode("utf-8") + b"\0"
+    cmdsize = _align(24 + len(encoded), 8)
+    command = bytearray(cmdsize)
+    struct.pack_into("<IIIIII", command, 0, LC_LOAD_DYLIB, cmdsize, 24, 0, 0, 0)
+    command[24:24 + len(encoded)] = encoded
+    return bytes(command)
+
+
+def append_load_dylib(binary: bytes, dylib_path: str) -> bytes:
+    info = inspect_macho(binary)
+    occurrences = info.dylib_paths.count(dylib_path)
+    if occurrences == 1:
+        return binary
+    if occurrences > 1:
+        raise MachOError("dylib path already appears more than once")
+
+    command = make_load_dylib_command(dylib_path)
+    new_end = info.command_end + len(command)
+    if new_end > info.first_section_offset:
+        raise MachOError("insufficient Mach-O load-command padding")
+    padding = binary[info.command_end:new_end]
+    if any(padding):
+        raise MachOError("load-command padding is not zero-filled")
+
+    patched = bytearray(binary)
+    patched[info.command_end:new_end] = command
+    struct.pack_into("<I", patched, 16, info.ncmds + 1)
+    struct.pack_into("<I", patched, 20, info.sizeofcmds + len(command))
+
+    result = bytes(patched)
+    updated = inspect_macho(result)
+    if updated.dylib_paths.count(dylib_path) != 1:
+        raise MachOError("new dylib command verification failed")
+    if result[info.first_section_offset:] != binary[info.first_section_offset:]:
+        raise MachOError("executable section bytes changed")
+    for before, after in zip(info.commands, updated.commands[: len(info.commands)]):
+        if before.payload != after.payload:
+            raise MachOError("an existing load command changed")
+    return result
