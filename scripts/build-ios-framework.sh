@@ -63,7 +63,7 @@ value = {
     "CFBundlePackageType": "FMWK",
     "CFBundleShortVersionString": "2.7.2",
     "CFBundleSupportedPlatforms": ["iPhoneOS"],
-    "CFBundleVersion": "843",
+    "CFBundleVersion": "844",
     "MinimumOSVersion": "15.0",
     "UIDeviceFamily": [1, 2],
     "UIRequiredDeviceCapabilities": ["arm64"],
