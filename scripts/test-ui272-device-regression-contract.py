@@ -5,6 +5,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 installer = (ROOT / "Sources/AEMotionUI271Host/AEMotionUI271Installer.swift").read_text(encoding="utf-8")
+resolver = (ROOT / "Sources/AEMotionUI271Host/AEMotionRuntimeResolver.swift").read_text(encoding="utf-8")
 adapter = (ROOT / "Sources/AEMotionUI271Host/AEMotionHostSurfaceAdapter.swift").read_text(encoding="utf-8")
 home = (ROOT / "Sources/AEMotionUI271Host/AEMotionHomeViewController.swift").read_text(encoding="utf-8")
 release = (ROOT / "Sources/AEMotionExtensionsCore/AEMotionRelease.swift").read_text(encoding="utf-8")
@@ -16,8 +17,10 @@ studio = studio_path.read_text(encoding="utf-8") if studio_path.exists() else ""
 
 checks = {
     "bounded late installer retry": (installer, r"didFinishLaunchingNotification.*didBecomeActiveNotification.*asyncAfter"),
-    "waits for all host classes": (installer, r"hostClassesAreReady\(\).*hasInstalled"),
-    "one-time successful install": (installer, r"guard !hasInstalled.*AEMotionRuntimeResolver\.install\(\).*hasInstalled = true"),
+    "installs available host hooks": (installer, r"AEMotionRuntimeResolver\.install\(\).*hasInstalled\s*=\s*AEMotionRuntimeResolver\.hasInstalledRequiredRootHooks"),
+    "actual template controllers": (resolver, r"TemplatesListVC.*TemplatesShowcaseVC"),
+    "persistent hook ownership": (resolver, r"private\s+static\s+var\s+installedClasses"),
+    "visible root activation": (resolver, r"refreshVisibleRootSurfaces"),
     "bounded root refresh": (adapter, r"scheduleRefresh.*remaining"),
     "non-home legacy branch cleanup": (adapter, r"hasPrefix\(\"aemotion\.home\.\"\).*aemotionTopLevelBranch"),
     "native tab bar replacement": (adapter, r"tabBar\.isHidden\s*=\s*true"),
@@ -32,11 +35,13 @@ checks = {
     "quick tool matte": (home, r"Matte"),
     "quick tool depth": (home, r"Depth"),
     "quick tool text": (home, r"Text"),
-    "build 841 release": (release + build, r"buildNumber\s*=\s*841.*CFBundleVersion\": \"841\""),
+    "build 842 release": (release + build, r"buildNumber\s*=\s*842.*CFBundleVersion\": \"842\""),
 }
 
 failed = [name for name, (text, pattern) in checks.items() if re.search(pattern, text, re.S) is None]
+if "hostClassesAreReady" in installer:
+    failed.append("obsolete all-or-nothing host readiness")
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
-print("PASS: Build 841 device regression contract")
+print("PASS: Build 842 device regression contract")
