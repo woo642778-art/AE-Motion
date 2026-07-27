@@ -12,10 +12,11 @@ failed: list[str] = []
 checks = {
     "dynamic product": 'name: "AEMotionUI272"',
     "installer symbol": "AEMotionUI272Install",
+    "constructor bootstrap": "__attribute__((constructor))",
     "framework bundle": "AEMotionUI272.framework",
     "framework executable": 'CFBundleExecutable": "AEMotionUI272"',
     "release version": 'CFBundleShortVersionString": "2.7.2"',
-    "release build": 'CFBundleVersion": "841"',
+    "release build": 'CFBundleVersion": "842"',
     "install name": "@rpath/AEMotionUI272.framework/AEMotionUI272",
 }
 for name, token in checks.items():
