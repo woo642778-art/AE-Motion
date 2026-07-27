@@ -18,7 +18,8 @@ studio = studio_path.read_text(encoding="utf-8") if studio_path.exists() else ""
 
 checks = {
     "global installer": (installer, r"AEMotionGlobalShellCoordinator\.start\(\)"),
-    "launch overlay": (installer, r"AEMotionLaunchOverlay\.install\(\)"),
+    "post-workspace overlay installer": (installer, r"AEMotionLaunchOverlay\.install\(\)"),
+    "shell readiness trigger": (coordinator, r"AEMotionLaunchOverlay\.markShellReady\(\)"),
     "bounded global refresh": (coordinator, r"scheduleRefreshBurst.*0\.10"),
     "root tab discovery": (coordinator, r"findTabController"),
     "dynamic project tab": (coordinator, r"controllerMarkers.*projectslistvc.*index\(for"),
@@ -39,11 +40,11 @@ checks = {
     "quick tool matte": (home, r"Matte"),
     "quick tool depth": (home, r"Depth"),
     "quick tool text": (home, r"Text"),
-    "build 847 release": (release + build, r"buildNumber\s*=\s*847.*CFBundleVersion\": \"847\""),
+    "build 848 release": (release + build, r"buildNumber\s*=\s*848.*CFBundleVersion\": \"848\""),
 }
 
 failed = [name for name, (text, pattern) in checks.items() if re.search(pattern, text, re.S | re.I) is None]
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
-print("PASS: Build 847 device regression contract")
+print("PASS: Build 848 device regression contract")
