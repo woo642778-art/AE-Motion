@@ -183,6 +183,56 @@ def append_load_dylib(binary: bytes, dylib_path: str) -> bytes:
     return result
 
 
+def insert_load_dylib_before(binary: bytes, dylib_path: str, before_path: str) -> bytes:
+    info = inspect_macho(binary)
+    occurrences = info.dylib_paths.count(dylib_path)
+    if occurrences > 1:
+        raise MachOError("dylib path already appears more than once")
+    if info.dylib_paths.count(before_path) != 1:
+        raise MachOError("reference dylib path must appear exactly once")
+    if occurrences == 1:
+        if info.dylib_paths.index(dylib_path) < info.dylib_paths.index(before_path):
+            return binary
+        raise MachOError("existing dylib is not before the reference dylib")
+
+    target = next(
+        command for command in info.commands
+        if _command_dylib_path(command) == before_path
+    )
+    command = make_load_dylib_command(dylib_path)
+    new_end = info.command_end + len(command)
+    if new_end > info.first_section_offset:
+        raise MachOError("insufficient Mach-O load-command padding")
+    if any(binary[info.command_end:new_end]):
+        raise MachOError("load-command padding is not zero-filled")
+
+    patched = bytearray(binary)
+    retained_tail = binary[target.offset:info.command_end]
+    patched[target.offset:target.offset + len(command)] = command
+    patched[target.offset + len(command):new_end] = retained_tail
+    struct.pack_into("<I", patched, 16, info.ncmds + 1)
+    struct.pack_into("<I", patched, 20, info.sizeofcmds + len(command))
+
+    result = bytes(patched)
+    updated = inspect_macho(result)
+    if updated.dylib_paths.count(dylib_path) != 1:
+        raise MachOError("inserted dylib command verification failed")
+    if updated.dylib_paths.index(dylib_path) >= updated.dylib_paths.index(before_path):
+        raise MachOError("inserted dylib command is not before the reference dylib")
+    if result[info.first_section_offset:] != binary[info.first_section_offset:]:
+        raise MachOError("executable section bytes changed")
+
+    expected_payloads: list[bytes] = []
+    for existing in info.commands:
+        if existing is target:
+            expected_payloads.append(command)
+        expected_payloads.append(existing.payload)
+    actual_payloads = [existing.payload for existing in updated.commands]
+    if actual_payloads != expected_payloads:
+        raise MachOError("non-target load commands changed during insertion")
+    return result
+
+
 def remove_load_dylib(binary: bytes, dylib_path: str) -> bytes:
     info = inspect_macho(binary)
     matching = [command for command in info.commands if _command_dylib_path(command) == dylib_path]
