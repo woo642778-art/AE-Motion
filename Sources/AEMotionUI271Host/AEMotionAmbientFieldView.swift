@@ -7,7 +7,7 @@ final class AEMotionAmbientFieldView: UIView {
     private let secondaryGlow = CAGradientLayer()
     private let grainOverlay = CAGradientLayer()
     private var isAnimationRequested = false
-    private var observers: [NSObjectProtocol] = []
+    nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
 
     override init(frame: CGRect) {
         super.init(frame: frame)
