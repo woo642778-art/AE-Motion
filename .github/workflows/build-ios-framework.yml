@@ -27,11 +27,29 @@ jobs:
       - name: Verify category proxy index-path forwarding
         run: python3 scripts/test-category-proxy-indexpath-forwarding.py
       - name: Verify Home Shell source contracts
+        id: home_contracts
+        continue-on-error: true
         run: |
-          set -euo pipefail
+          set +e
+          status=0
+          : > home-contracts.log
           for test in scripts/test-ui271-*-contract.py; do
-            python3 "$test"
+            echo "=== $test ===" | tee -a home-contracts.log
+            python3 "$test" 2>&1 | tee -a home-contracts.log
+            code=${PIPESTATUS[0]}
+            if [ "$code" -ne 0 ]; then status=$code; fi
           done
+          exit "$status"
+      - name: Upload Home Shell contract log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AEMotionUI272-build844-home-contracts
+          path: home-contracts.log
+          if-no-files-found: error
+      - name: Fail on Home Shell contract error
+        if: steps.home_contracts.outcome == 'failure'
+        run: exit 1
       - name: Verify 2.7.2 integration contracts
         run: |
           set -euo pipefail
