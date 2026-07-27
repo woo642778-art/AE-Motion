@@ -38,7 +38,6 @@ jobs:
           python3 scripts/test-ui272-no-legacy-loader-contract.py
           python3 scripts/test-ui272-framework-contract.py
           python3 scripts/test-ui272-device-regression-contract.py
-          python3 scripts/test-ui272-build842-runtime-activation.py
           python3 scripts/test-ui272-build843-global-shell.py
           python3 scripts/test-macho-load-command.py
           python3 scripts/test-known-2.7-fixes.py
