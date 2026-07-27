@@ -13,7 +13,7 @@ checks = {
     "navigation owned by shell": (shell, r'AEMotionShellNavigationView'),
     "workspace": (home, r'Workspace'),
     "continue editing": (home, r'Continue editing'),
-    "new project": (home, r'New Project'),
+    "new project": (home, r'New [Pp]roject'),
     "import": (home, r'Import'),
     "tutorials": (home, r'Tutorials'),
     "templates": (home, r'Templates'),
@@ -36,4 +36,4 @@ if re.search(r'fakeProject|placeholderProject|sampleProject', combined, re.I):
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
-print("PASS: UI 2.7.1 home shell contract")
+print("PASS: UI 2.7.2 home shell contract")
