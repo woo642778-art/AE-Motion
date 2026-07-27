@@ -4,7 +4,7 @@ import XCTest
 final class HomeShellStateTests: XCTestCase {
     func testReleaseIdentity() {
         XCTAssertEqual(AEMotionRelease.marketingVersion, "2.7.2")
-        XCTAssertEqual(AEMotionRelease.buildNumber, 845)
+        XCTAssertEqual(AEMotionRelease.buildNumber, 846)
     }
 
     func testNonRootDestinationsHideNavigationAndReturnRestoresIt() {
