@@ -20,11 +20,13 @@ enum AEMotionUI272Installer {
     @MainActor private static var retryCount = 0
     @MainActor private static var retryScheduled = false
     @MainActor private static var observers: [NSObjectProtocol] = []
-    private static let maximumRetryCount = 120
+    private static let maximumRetryCount = 600
     private static let retryDelay: TimeInterval = 0.10
 
     @MainActor
     static func start() {
+        AEMotionLaunchBrandingSanitizer.install()
+
         if !hasStarted {
             hasStarted = true
             let center = NotificationCenter.default
@@ -33,14 +35,20 @@ enum AEMotionUI272Installer {
                 object: nil,
                 queue: .main
             ) { _ in
-                Task { @MainActor in attemptInstall() }
+                Task { @MainActor in
+                    retryCount = 0
+                    attemptInstall()
+                }
             })
             observers.append(center.addObserver(
                 forName: UIApplication.didBecomeActiveNotification,
                 object: nil,
                 queue: .main
             ) { _ in
-                Task { @MainActor in attemptInstall() }
+                Task { @MainActor in
+                    retryCount = 0
+                    attemptInstall()
+                }
             })
         }
         attemptInstall()
@@ -48,13 +56,16 @@ enum AEMotionUI272Installer {
 
     @MainActor
     private static func attemptInstall() {
-        guard !hasInstalled else { return }
         retryScheduled = false
-        if hostClassesAreReady(), AEMotionRuntimeResolver.install() {
-            hasInstalled = true
+        _ = AEMotionRuntimeResolver.install()
+        hasInstalled = AEMotionRuntimeResolver.hasInstalledRequiredRootHooks
+
+        if hasInstalled {
             retryCount = 0
+            AEMotionRuntimeResolver.refreshVisibleRootSurfaces()
             return
         }
+
         guard retryCount < maximumRetryCount else { return }
         retryCount += 1
         guard !retryScheduled else { return }
@@ -62,21 +73,6 @@ enum AEMotionUI272Installer {
         DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay) {
             Task { @MainActor in attemptInstall() }
         }
-    }
-
-    @MainActor
-    private static func hostClassesAreReady() -> Bool {
-        let home = [
-            "AlightMotion.HomeVC", "_TtC12AlightMotion6HomeVC",
-            "AlightMotion.HomeViewVC", "_TtC12AlightMotion10HomeViewVC",
-        ].contains { NSClassFromString($0) != nil }
-        let projects = [
-            "AlightMotion.ProjectsVC", "_TtC12AlightMotion10ProjectsVC",
-        ].contains { NSClassFromString($0) != nil }
-        let templates = [
-            "AlightMotion.TemplatesVC", "_TtC12AlightMotion11TemplatesVC",
-        ].contains { NSClassFromString($0) != nil }
-        return home && projects && templates
     }
 #else
     static func start() {}
