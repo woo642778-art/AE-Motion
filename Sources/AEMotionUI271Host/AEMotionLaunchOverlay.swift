@@ -10,6 +10,7 @@ enum AEMotionLaunchOverlay {
     private static let channelDismissedKey = "aemotion.build847.official-channel-dismissed"
 
     private static var hasStarted = false
+    private static var isFinished = false
     private static var didReachMinimumDuration = false
     private static var didTransitionFromLoading = false
     private static var overlayWindow: UIWindow?
@@ -18,6 +19,7 @@ enum AEMotionLaunchOverlay {
     private static var presentationGeneration = 0
 
     static func install() {
+        guard !isFinished else { return }
         guard !hasStarted else {
             schedulePresentationBurst()
             return
@@ -41,13 +43,13 @@ enum AEMotionLaunchOverlay {
         }
 
         schedulePresentationBurst()
-
         DispatchQueue.main.asyncAfter(deadline: .now() + minimumVisibleDuration) {
+            guard !isFinished else { return }
             didReachMinimumDuration = true
             finishLoadingPhase()
         }
-
         DispatchQueue.main.asyncAfter(deadline: .now() + maximumVisibleDuration) {
+            guard !isFinished else { return }
             dismissOverlay(animated: true)
         }
     }
@@ -57,18 +59,20 @@ enum AEMotionLaunchOverlay {
     }
 
     private static func schedulePresentationBurst() {
+        guard !isFinished else { return }
         presentationGeneration += 1
         let generation = presentationGeneration
         for attempt in 0..<100 {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(attempt) * 0.05) {
-                guard generation == presentationGeneration else { return }
+                guard !isFinished, generation == presentationGeneration else { return }
                 presentIfPossible()
             }
         }
     }
 
     private static func presentIfPossible() {
-        guard overlayWindow == nil,
+        guard !isFinished,
+              overlayWindow == nil,
               let scene = UIApplication.shared.connectedScenes
                 .compactMap({ $0 as? UIWindowScene })
                 .first(where: {
@@ -101,7 +105,8 @@ enum AEMotionLaunchOverlay {
     }
 
     private static func finishLoadingPhase() {
-        guard didReachMinimumDuration,
+        guard !isFinished,
+              didReachMinimumDuration,
               !didTransitionFromLoading,
               let controller = overlayController else { return }
         didTransitionFromLoading = true
@@ -114,6 +119,12 @@ enum AEMotionLaunchOverlay {
     }
 
     private static func dismissOverlay(animated: Bool) {
+        guard !isFinished else { return }
+        isFinished = true
+        presentationGeneration += 1
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers.removeAll()
+
         guard let window = overlayWindow else { return }
         overlayController?.stopAnimation()
 
@@ -124,19 +135,17 @@ enum AEMotionLaunchOverlay {
             overlayWindow = nil
             restoreApplicationKeyWindow(excluding: window)
         }
-
         guard animated else {
             finish()
             return
         }
-
         UIView.animate(withDuration: 0.24, animations: {
             window.alpha = 0
         }, completion: { _ in finish() })
     }
 
     private static func restoreApplicationKeyWindow(excluding overlay: UIWindow) {
-        let candidate = UIApplication.shared.connectedScenes
+        UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows)
             .filter {
@@ -145,12 +154,11 @@ enum AEMotionLaunchOverlay {
                     && $0.alpha > 0.01
                     && $0.windowLevel == .normal
             }
-            .max { left, right in
-                let leftArea = left.bounds.width * left.bounds.height
-                let rightArea = right.bounds.width * right.bounds.height
-                return leftArea < rightArea
-            }
-        candidate?.makeKey()
+            .max {
+                ($0.bounds.width * $0.bounds.height)
+                    < ($1.bounds.width * $1.bounds.height)
+            }?
+            .makeKey()
     }
 }
 
@@ -174,9 +182,7 @@ private final class AEMotionLaunchExperienceViewController: UIViewController {
         startAnimation()
     }
 
-    deinit {
-        progressTimer?.invalidate()
-    }
+    deinit { progressTimer?.invalidate() }
 
     func markWorkspaceReady() {
         statusLabel.text = "Workspace ready"
@@ -193,17 +199,12 @@ private final class AEMotionLaunchExperienceViewController: UIViewController {
         stopAnimation()
         channelStack.isHidden = false
         channelStack.alpha = 0
-        channelStack.transform = CGAffineTransform(
-            translationX: 0,
-            y: 18
-        ).scaledBy(x: 0.96, y: 0.96)
-
+        channelStack.transform = CGAffineTransform(translationX: 0, y: 18)
+            .scaledBy(x: 0.96, y: 0.96)
         UIView.animate(withDuration: 0.32, delay: 0, options: [.curveEaseOut]) {
             self.loadingStack.alpha = 0
-            self.loadingStack.transform = CGAffineTransform(
-                translationX: 0,
-                y: -16
-            ).scaledBy(x: 0.96, y: 0.96)
+            self.loadingStack.transform = CGAffineTransform(translationX: 0, y: -16)
+                .scaledBy(x: 0.96, y: 0.96)
             self.channelStack.alpha = 1
             self.channelStack.transform = .identity
         } completion: { _ in
@@ -307,19 +308,13 @@ private final class AEMotionLaunchExperienceViewController: UIViewController {
             title: "Join AE Motion Telegram",
             color: UIColor(red: 0.13, green: 0.58, blue: 0.95, alpha: 1)
         )
-        join.accessibilityIdentifier = "aemotion.launch.join-telegram"
-        join.addAction(UIAction { [weak self] _ in
-            self?.onJoinChannel?()
-        }, for: .touchUpInside)
+        join.addAction(UIAction { [weak self] _ in self?.onJoinChannel?() }, for: .touchUpInside)
 
         let close = makeButton(
             title: "Continue to AE Motion",
             color: UIColor(red: 0.45, green: 0.20, blue: 0.98, alpha: 1)
         )
-        close.accessibilityIdentifier = "aemotion.launch.continue"
-        close.addAction(UIAction { [weak self] _ in
-            self?.onContinue?()
-        }, for: .touchUpInside)
+        close.addAction(UIAction { [weak self] _ in self?.onContinue?() }, for: .touchUpInside)
 
         channelStack.axis = .vertical
         channelStack.alignment = .fill
@@ -330,14 +325,8 @@ private final class AEMotionLaunchExperienceViewController: UIViewController {
         view.addSubview(channelStack)
         NSLayoutConstraint.activate([
             channelStack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            channelStack.leadingAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.leadingAnchor,
-                constant: 28
-            ),
-            channelStack.trailingAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
-                constant: -28
-            ),
+            channelStack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 28),
+            channelStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -28),
             join.heightAnchor.constraint(equalToConstant: 58),
             close.heightAnchor.constraint(equalToConstant: 58),
         ])
@@ -351,16 +340,10 @@ private final class AEMotionLaunchExperienceViewController: UIViewController {
         rotation.repeatCount = .infinity
         ringLayer.add(rotation, forKey: "aemotion.launch.rotation")
 
-        progressTimer = Timer.scheduledTimer(
-            withTimeInterval: 0.08,
-            repeats: true
-        ) { [weak self] _ in
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                self.progressView.progress = min(
-                    0.92,
-                    self.progressView.progress + 0.018
-                )
+                self.progressView.progress = min(0.92, self.progressView.progress + 0.018)
             }
         }
     }
