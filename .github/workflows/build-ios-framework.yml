@@ -44,7 +44,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AEMotionUI272-build844-home-contracts
+          name: AEMotionUI272-build845-home-contracts
           path: home-contracts.log
           if-no-files-found: error
       - name: Fail on Home Shell contract error
@@ -63,6 +63,7 @@ jobs:
             scripts/test-ui272-device-regression-contract.py
             scripts/test-ui272-build843-global-shell.py
             scripts/test-ui272-build844-window-root.py
+            scripts/test-ui272-build845-crash-recovery.py
             scripts/test-macho-load-command.py
             scripts/test-known-2.7-fixes.py
             scripts/test-package-ui272-ipa.py
@@ -78,7 +79,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AEMotionUI272-build844-integration-contracts
+          name: AEMotionUI272-build845-integration-contracts
           path: integration-contracts.log
           if-no-files-found: error
       - name: Fail on integration contract error
@@ -106,7 +107,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AEMotionUI272-2.7.2-build844-log
+          name: AEMotionUI272-2.7.2-build845-log
           path: build-ios.log
           if-no-files-found: ignore
       - name: Fail on iOS build error
@@ -132,6 +133,6 @@ jobs:
             > artifacts/AEMotionUI272-framework.zip.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: AEMotionUI272-iOS-2.7.2-build844
+          name: AEMotionUI272-iOS-2.7.2-build845
           path: artifacts/*
           if-no-files-found: error
