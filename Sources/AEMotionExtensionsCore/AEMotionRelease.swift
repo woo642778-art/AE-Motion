@@ -1,7 +1,7 @@
 import Foundation
 
 public enum AEMotionRelease {
-    public static let marketingVersion = "2.7.1"
-    public static let buildNumber = 839
+    public static let marketingVersion = "2.7.2"
+    public static let buildNumber = 840
     public static let displayVersion = "\(marketingVersion) (\(buildNumber))"
 }
