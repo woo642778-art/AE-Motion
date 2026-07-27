@@ -20,7 +20,7 @@ checks = {
     "contrast normalization": (adapter, r'normalizeTextContrast'),
     "shell root attach": (resolver, r'shell\.attach\(to:'),
     "nonroot hide": (resolver, r'openNonRoot'),
-    "legacy before runtime": (installer, r'loadLegacyFramework\(\).*installRuntimeHooks'),
+    "direct 2.7.2 installer": (installer, r'@_cdecl\("AEMotionUI272Install"\).*installRuntimeHooks'),
 }
 
 failed = [name for name, (content, pattern) in checks.items() if re.search(pattern, content, re.S) is None]
@@ -28,7 +28,10 @@ if "objc_getClassList" in resolver:
     failed.append("broad runtime class enumeration")
 if "UITableViewDataSource" in adapter or "UICollectionViewDataSource" in adapter:
     failed.append("host data-source replacement")
+for forbidden in ("LegacyFrameworkLoader", "AEMotionLegacy", "dlopen"):
+    if forbidden in installer:
+        failed.append(f"forbidden installer token: {forbidden}")
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
-print("PASS: UI 2.7.1 runtime contract")
+print("PASS: UI 2.7.2 runtime contract")
