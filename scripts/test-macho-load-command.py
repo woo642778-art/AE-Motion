@@ -14,11 +14,13 @@ from macho_load_command import (  # noqa: E402
     MH_MAGIC_64,
     MachOError,
     append_load_dylib,
+    insert_load_dylib_before,
     inspect_macho,
     remove_load_dylib,
 )
 
 PATH = "@rpath/AEMotionUI272.framework/AEMotionUI272"
+REFERENCE = "@rpath/AlightMotion.dylib"
 
 
 def make_fixture(*, padding_byte: int = 0, first_section_offset: int = 512) -> bytes:
@@ -56,6 +58,21 @@ class MachOLoadCommandTests(unittest.TestCase):
     def test_duplicate_insertion_is_idempotent(self) -> None:
         once = append_load_dylib(make_fixture(), PATH)
         twice = append_load_dylib(once, PATH)
+        self.assertEqual(twice, once)
+
+    def test_inserts_command_before_reference_without_changing_sections(self) -> None:
+        original = append_load_dylib(make_fixture(first_section_offset=1024), REFERENCE)
+        before = inspect_macho(original)
+        patched = insert_load_dylib_before(original, PATH, REFERENCE)
+        after = inspect_macho(patched)
+        self.assertLess(after.dylib_paths.index(PATH), after.dylib_paths.index(REFERENCE))
+        self.assertEqual(after.ncmds, before.ncmds + 1)
+        self.assertEqual(patched[before.first_section_offset:], original[before.first_section_offset:])
+
+    def test_ordered_insertion_is_idempotent(self) -> None:
+        original = append_load_dylib(make_fixture(first_section_offset=1024), REFERENCE)
+        once = insert_load_dylib_before(original, PATH, REFERENCE)
+        twice = insert_load_dylib_before(once, PATH, REFERENCE)
         self.assertEqual(twice, once)
 
     def test_removes_exact_command_without_changing_sections(self) -> None:
