@@ -21,7 +21,9 @@ checks = {
     "Build 848 dismissal key": (launch, r"aemotion\.build848\.official-channel-dismissed"),
     "Build 848 release": (release + build, r"buildNumber\s*=\s*848.*CFBundleVersion\": \"848\""),
     "Build 848 packaging": (packager, r"BUILD_NUMBER\s*=\s*848.*AE Motion 848"),
-    "verified promotion repair retained": (packager, r"0x57c0.*0x5910.*0x4000"),
+    "arm64 promotion repair retained": (packager, r"0x57c0"),
+    "arm64e promotion repair retained": (packager, r"0x5910"),
+    "first initializer preservation retained": (packager, r"0x4000"),
 }
 
 failed = [
