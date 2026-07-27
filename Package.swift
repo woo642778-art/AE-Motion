@@ -7,26 +7,26 @@ let package = Package(
     products: [
         .library(name: "AEMotionExtensionsCore", targets: ["AEMotionExtensionsCore"]),
         .library(
-            name: "AEMotionExtensionsHost",
+            name: "AEMotionUI272",
             type: .dynamic,
             targets: ["AEMotionUI271Host", "AEMotionUI271Bootstrap"]
         ),
         .library(
-            name: "AEMotionExtensionsLegacySource",
+            name: "AEMotionExtensionsSourceSnapshot",
             type: .dynamic,
-            targets: ["AEMotionExtensionsLegacySourceHost", "AEMotionLegacySourceBootstrap"]
+            targets: ["AEMotionExtensionsSourceHost", "AEMotionSourceBootstrap"]
         ),
     ],
     targets: [
         .target(name: "AEMotionExtensionsCore"),
         .target(
-            name: "AEMotionExtensionsLegacySourceHost",
+            name: "AEMotionExtensionsSourceHost",
             dependencies: ["AEMotionExtensionsCore"],
             path: "Sources/AEMotionExtensionsHost"
         ),
         .target(
-            name: "AEMotionLegacySourceBootstrap",
-            dependencies: ["AEMotionExtensionsLegacySourceHost"],
+            name: "AEMotionSourceBootstrap",
+            dependencies: ["AEMotionExtensionsSourceHost"],
             path: "Sources/AEMotionBootstrap",
             publicHeadersPath: "include"
         ),
