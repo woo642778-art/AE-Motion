@@ -11,7 +11,7 @@ from pathlib import Path
 import unittest
 import zipfile
 
-SCRIPT = Path(__file__).with_name("package-ui272-ipa.py")
+SCRIPT = Path(__file__).with_name("package-ui272-build841-ipa.py")
 spec = importlib.util.spec_from_file_location("package_ui272", SCRIPT)
 module = importlib.util.module_from_spec(spec)
 assert spec.loader
@@ -53,6 +53,9 @@ def make_ui_framework(root: Path) -> Path:
 
 
 class PackageUI272Tests(unittest.TestCase):
+    def test_build_identity_is_841(self) -> None:
+        self.assertEqual(module.BUILD_NUMBER, 841)
+
     def test_preservation_gate_rejects_an_unexpected_change(self) -> None:
         before = {"untouched.bin": "aaa", "Info.plist": "bbb"}
         after = {"untouched.bin": "changed", "Info.plist": "new"}
@@ -103,6 +106,7 @@ class PackageUI272Tests(unittest.TestCase):
                 manifest = json.loads(archive.read(prefix + module.MANIFEST_NAME))
                 self.assertEqual(manifest["integration"], "separate-signed-framework-explicit-load-command")
                 self.assertTrue(manifest["existingExtensionPreserved"])
+                self.assertEqual(manifest["build"], 841)
 
 
 if __name__ == "__main__":
