@@ -15,7 +15,7 @@ checks = {
     "framework bundle": "AEMotionUI272.framework",
     "framework executable": 'CFBundleExecutable": "AEMotionUI272"',
     "release version": 'CFBundleShortVersionString": "2.7.2"',
-    "release build": 'CFBundleVersion": "840"',
+    "release build": 'CFBundleVersion": "841"',
     "install name": "@rpath/AEMotionUI272.framework/AEMotionUI272",
 }
 for name, token in checks.items():
