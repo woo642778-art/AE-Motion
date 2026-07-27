@@ -11,6 +11,13 @@ enum AEMotionGlobalShellCoordinator {
         let area: CGFloat
     }
 
+    private static let controllerMarkers: [HomeShellTab: [String]] = [
+        .home: ["homevc", "homeviewvc"],
+        .tutorials: ["tutorialsviewvc", "tutorialvc", "learning"],
+        .projects: ["projectslistvc", "projectsvc"],
+        .templates: ["templateslistvc", "templatesshowcasevc", "templatesvc"],
+    ]
+
     private static var hasStarted = false
     private static var observers: [NSObjectProtocol] = []
     private static var refreshGeneration = 0
@@ -44,7 +51,7 @@ enum AEMotionGlobalShellCoordinator {
     private static func scheduleRefreshBurst() {
         refreshGeneration += 1
         let generation = refreshGeneration
-        for attempt in 0..<120 {
+        for attempt in 0..<160 {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(attempt) * 0.10) {
                 guard generation == refreshGeneration else { return }
                 refreshVisibleShell()
@@ -91,7 +98,14 @@ enum AEMotionGlobalShellCoordinator {
                 _ = homeAdapter?.perform(action)
             }
         }
+        shell.settingsHandler = {
+            presentStoryboard(named: "SettingsNC", from: tabController)
+        }
+        shell.profileHandler = {
+            presentStoryboard(named: "MyAccountVC", from: tabController)
+        }
         container.showShell(tab: tab, showsHomeContent: tab == .home)
+        AEMotionLaunchOverlay.markShellReady()
     }
 
     private static func isSafeToWrap(_ candidate: WindowCandidate) -> Bool {
@@ -218,20 +232,64 @@ enum AEMotionGlobalShellCoordinator {
         leaf: UIViewController?
     ) -> HomeShellTab? {
         if let leaf {
-            let name = String(describing: type(of: leaf)).lowercased()
-            if name.contains("homevc") || name.contains("homeviewvc") { return .home }
-            if name.contains("tutorialvc") || name.contains("learning") { return .tutorials }
-            if name.contains("projectsvc") || name.contains("projectslistvc") { return .projects }
-            if name.contains("templateslistvc") || name.contains("templatesshowcasevc") { return .templates }
+            for tab in [HomeShellTab.home, .tutorials, .projects, .templates] {
+                guard let markers = controllerMarkers[tab] else { continue }
+                if matches(controller: leaf, markers: markers) { return tab }
+            }
         }
 
-        switch tabController.selectedIndex {
-        case 0: return .home
-        case 1: return .tutorials
-        case 3: return .projects
-        case 4: return .templates
-        default: return nil
+        for tab in [HomeShellTab.home, .tutorials, .projects, .templates] {
+            if index(for: tab, in: tabController) == tabController.selectedIndex {
+                return tab
+            }
         }
+        return nil
+    }
+
+    private static func index(for tab: HomeShellTab, in tabController: UITabBarController) -> Int? {
+        guard tab != .create,
+              let controllers = tabController.viewControllers,
+              let markers = controllerMarkers[tab] else { return nil }
+
+        if let exact = controllers.firstIndex(where: { matches(controller: $0, markers: markers) }) {
+            return exact
+        }
+
+        if controllers.count == 4 {
+            switch tab {
+            case .home: return 0
+            case .tutorials: return 1
+            case .projects: return 2
+            case .templates: return 3
+            case .create: return nil
+            }
+        }
+        if controllers.count >= 5 {
+            switch tab {
+            case .home: return 0
+            case .tutorials: return 1
+            case .projects: return 3
+            case .templates: return 4
+            case .create: return nil
+            }
+        }
+        return nil
+    }
+
+    private static func matches(controller: UIViewController, markers: [String]) -> Bool {
+        var queue: [UIViewController] = [controller]
+        var seen = Set<ObjectIdentifier>()
+        while !queue.isEmpty {
+            let current = queue.removeFirst()
+            guard seen.insert(ObjectIdentifier(current)).inserted else { continue }
+            let className = String(describing: type(of: current)).lowercased()
+            if markers.contains(where: { className.contains($0) }) { return true }
+            queue.append(contentsOf: current.children)
+            if let navigation = current as? UINavigationController {
+                queue.append(contentsOf: navigation.viewControllers)
+            }
+        }
+        return false
     }
 
     private static func shouldDetachShell(
@@ -248,6 +306,8 @@ enum AEMotionGlobalShellCoordinator {
             "templatepreview",
             "export",
             "render",
+            "settingsvc",
+            "myaccountvc",
         ]
         if nonRootMarkers.contains(where: { name.contains($0) }) { return true }
 
@@ -280,22 +340,34 @@ enum AEMotionGlobalShellCoordinator {
     }
 
     private static func homeController(in tabController: UITabBarController) -> UIViewController? {
-        guard let candidate = tabController.viewControllers?.first else { return nil }
-        return visibleLeaf(from: candidate)
+        guard let index = index(for: .home, in: tabController),
+              let controllers = tabController.viewControllers,
+              index < controllers.count else { return nil }
+        return visibleLeaf(from: controllers[index])
     }
 
     private static func route(_ tab: HomeShellTab, in tabController: UITabBarController) {
-        let index: Int
-        switch tab {
-        case .home: index = 0
-        case .tutorials: index = 1
-        case .projects: index = 3
-        case .templates: index = 4
-        case .create: return
-        }
-        guard index < (tabController.viewControllers?.count ?? 0) else { return }
+        guard let index = index(for: tab, in: tabController),
+              let controllers = tabController.viewControllers,
+              index < controllers.count else { return }
         tabController.selectedIndex = index
+        tabController.selectedViewController = controllers[index]
+        tabController.view.setNeedsLayout()
+        tabController.view.layoutIfNeeded()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            scheduleRefreshBurst()
+        }
+    }
+
+    private static func presentStoryboard(named name: String, from tabController: UITabBarController) {
+        guard let destination = UIStoryboard(name: name, bundle: .main).instantiateInitialViewController() else {
+            return
+        }
+        let presenter = visibleLeaf(from: tabController.selectedViewController ?? tabController)
+        guard presenter.presentedViewController == nil else { return }
+        destination.modalPresentationStyle = .fullScreen
+        AEMotionShellViewController.shared.openNonRoot(.detail)
+        presenter.present(destination, animated: true) {
             scheduleRefreshBurst()
         }
     }
