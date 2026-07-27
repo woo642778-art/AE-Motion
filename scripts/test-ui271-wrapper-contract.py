@@ -15,9 +15,11 @@ checks = {
         r'library\(\s*name:\s*"AEMotionExtensionsHost",\s*type:\s*\.dynamic,\s*targets:\s*\["AEMotionUI271Host",\s*"AEMotionUI271Bootstrap"\]',
     ),
     "legacy source product retained": (package, r'AEMotionExtensionsLegacySource'),
+    "legacy target renamed": (package, r'name:\s*"AEMotionExtensionsLegacySourceHost"'),
+    "legacy target path retained": (package, r'path:\s*"Sources/AEMotionExtensionsHost"'),
     "wrapper host target": (package, r'target\(name:\s*"AEMotionUI271Host"'),
     "wrapper bootstrap target": (package, r'name:\s*"AEMotionUI271Bootstrap"'),
-    "legacy filename": (loader, r'AEMotionExtensionsLegacy'),
+    "legacy filename": (loader, r'AEMotionLegacy'),
     "dlopen": (loader, r'\bdlopen\s*\('),
     "global symbols": (loader, r'RTLD_GLOBAL'),
     "cdecl installer": (installer, r'@_cdecl\("AEMotionUI271Install"\)'),
@@ -26,6 +28,8 @@ checks = {
 }
 
 failed = [name for name, (content, pattern) in checks.items() if re.search(pattern, content, re.S) is None]
+if re.search(r'target\(name:\s*"AEMotionExtensionsHost"', package):
+    failed.append("legacy target collides with app-load product")
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
