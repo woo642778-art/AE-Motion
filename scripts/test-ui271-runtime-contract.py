@@ -11,10 +11,11 @@ installer = (ROOT / "Sources/AEMotionUI271Host/AEMotionUI271Installer.swift").re
 
 checks = {
     "home allowlist": (resolver, r'AlightMotion\.HomeVC.*AlightMotion\.HomeViewVC'),
-    "projects allowlist": (resolver, r'AlightMotion\.ProjectsVC'),
-    "templates allowlist": (resolver, r'AlightMotion\.TemplatesVC'),
+    "projects allowlist": (resolver, r'AlightMotion\.ProjectsVC.*AlightMotion\.ProjectsListVC'),
+    "templates allowlist": (resolver, r'AlightMotion\.TemplatesListVC.*AlightMotion\.TemplatesShowcaseVC'),
     "associated ownership": (resolver, r'objc_(get|set)AssociatedObject'),
     "exact runtime lookup": (resolver, r'NSClassFromString'),
+    "persistent class hook ownership": (resolver, r'private\s+static\s+var\s+installedClasses'),
     "legacy action forwarding": (coordinator, r'sendActions\(for:\s*\.touchUpInside\)'),
     "known identifier capture": (adapter, r'aemotion\.home\.'),
     "owned overlay cleanup": (adapter, r'hasPrefix\("aemotion\.home\."\)'),
