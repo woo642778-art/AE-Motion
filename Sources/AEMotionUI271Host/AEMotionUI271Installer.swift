@@ -16,6 +16,7 @@ public func AEMotionUI272Install() {
 enum AEMotionUI272Installer {
 #if canImport(UIKit)
     @MainActor private static var hasStarted = false
+    @MainActor private static var hasInstalled = false
     @MainActor private static var retryCount = 0
     @MainActor private static var retryScheduled = false
     @MainActor private static var observers: [NSObjectProtocol] = []
@@ -47,8 +48,10 @@ enum AEMotionUI272Installer {
 
     @MainActor
     private static func attemptInstall() {
+        guard !hasInstalled else { return }
         retryScheduled = false
-        if AEMotionRuntimeResolver.install() {
+        if hostClassesAreReady(), AEMotionRuntimeResolver.install() {
+            hasInstalled = true
             retryCount = 0
             return
         }
@@ -59,6 +62,21 @@ enum AEMotionUI272Installer {
         DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay) {
             Task { @MainActor in attemptInstall() }
         }
+    }
+
+    @MainActor
+    private static func hostClassesAreReady() -> Bool {
+        let home = [
+            "AlightMotion.HomeVC", "_TtC12AlightMotion6HomeVC",
+            "AlightMotion.HomeViewVC", "_TtC12AlightMotion10HomeViewVC",
+        ].contains { NSClassFromString($0) != nil }
+        let projects = [
+            "AlightMotion.ProjectsVC", "_TtC12AlightMotion10ProjectsVC",
+        ].contains { NSClassFromString($0) != nil }
+        let templates = [
+            "AlightMotion.TemplatesVC", "_TtC12AlightMotion11TemplatesVC",
+        ].contains { NSClassFromString($0) != nil }
+        return home && projects && templates
     }
 #else
     static func start() {}
