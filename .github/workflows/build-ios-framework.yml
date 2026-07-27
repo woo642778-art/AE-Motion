@@ -1,8 +1,11 @@
 name: Build iOS Extensions Framework
 on:
   workflow_dispatch:
+  pull_request:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - fix/home-shell-ui-restoration
 jobs:
   build:
     runs-on: macos-15
@@ -22,13 +25,32 @@ jobs:
         run: python3 scripts/test-category-collection-proxy-isolation.py
       - name: Verify category proxy index-path forwarding
         run: python3 scripts/test-category-proxy-indexpath-forwarding.py
+      - name: Verify AE Motion 2.7.1 source contracts
+        run: |
+          set -euo pipefail
+          for test in scripts/test-ui271-*-contract.py; do
+            python3 "$test"
+          done
+      - name: Verify AE Motion 2.7.1 packaging
+        run: python3 scripts/test-package-ui271-ipa.py
       - name: Build iOS framework
         run: ./scripts/build-ios-framework.sh
+      - name: Inspect framework
+        run: |
+          file build/AEMotionExtensionsHost.framework/AEMotionExtensionsHost
+          lipo -info build/AEMotionExtensionsHost.framework/AEMotionExtensionsHost
+          otool -D build/AEMotionExtensionsHost.framework/AEMotionExtensionsHost
+          plutil -p build/AEMotionExtensionsHost.framework/Info.plist
       - name: Collect products
         run: |
           mkdir -p artifacts
-          find build/DerivedData/Build/Products -name 'AEMotionExtensionsHost.framework' -type d -exec ditto -c -k --sequesterRsrc --keepParent {} artifacts/AEMotionExtensionsHost-framework.zip \;
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/AEMotionExtensionsHost.framework \
+            artifacts/AEMotionExtensionsHost-framework.zip
+          shasum -a 256 artifacts/AEMotionExtensionsHost-framework.zip \
+            > artifacts/AEMotionExtensionsHost-framework.zip.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: AEMotionExtensionsHost-iOS
+          name: AEMotionExtensionsHost-iOS-2.7.1-build839
           path: artifacts/*
+          if-no-files-found: error
