@@ -9,18 +9,19 @@ adapter = (ROOT / "Sources/AEMotionUI271Host/AEMotionHostSurfaceAdapter.swift").
 coordinator_actions = (ROOT / "Sources/AEMotionUI271Host/AEMotionProjectActionCoordinator.swift").read_text(encoding="utf-8")
 installer = (ROOT / "Sources/AEMotionUI271Host/AEMotionUI271Installer.swift").read_text(encoding="utf-8")
 shell = (ROOT / "Sources/AEMotionUI271Host/AEMotionShellViewController.swift").read_text(encoding="utf-8")
+container = (ROOT / "Sources/AEMotionUI271Host/AEMotionRootContainerViewController.swift").read_text(encoding="utf-8")
 
 checks = {
     "global root installer": (installer, r'AEMotionGlobalShellCoordinator\.start'),
-    "window root ownership": (coordinator, r'window\.rootViewController'),
+    "window root ownership": (coordinator, r'window\.rootViewController\s*=\s*container'),
     "tab controller discovery": (coordinator, r'findTabController'),
     "native tab hidden": (coordinator, r'tabBar\.isHidden\s*=\s*true'),
     "legacy action forwarding": (coordinator_actions, r'sendActions\(for:\s*\.touchUpInside\)'),
     "known identifier capture": (adapter, r'aemotion\.home\.'),
     "owned overlay cleanup": (adapter, r'hasPrefix\("aemotion\.home\."\)'),
     "contrast normalization": (adapter, r'normalizeTextContrast'),
-    "shell root attach": (coordinator, r'shell\.attach\(to:'),
-    "nonroot detach": (coordinator, r'detachFromCurrentHost'),
+    "full-window shell embedding": (container, r'addChild\(shellController\).*bringSubviewToFront'),
+    "nonroot shell hiding": (container + coordinator, r'hideShell\(\)'),
     "AE Motion header": (shell, r'AEMotionShellHeaderView.*AE Motion'),
 }
 
@@ -35,4 +36,4 @@ for forbidden in ("LegacyFrameworkLoader", "AEMotionLegacy", "dlopen"):
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
-print("PASS: UI 2.7.2 global runtime contract")
+print("PASS: UI 2.7.2 full-window runtime contract")
