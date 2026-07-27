@@ -51,16 +51,39 @@ jobs:
         if: steps.home_contracts.outcome == 'failure'
         run: exit 1
       - name: Verify 2.7.2 integration contracts
+        id: integration_contracts
+        continue-on-error: true
         run: |
-          set -euo pipefail
-          python3 scripts/test-ui272-no-legacy-loader-contract.py
-          python3 scripts/test-ui272-framework-contract.py
-          python3 scripts/test-ui272-device-regression-contract.py
-          python3 scripts/test-ui272-build843-global-shell.py
-          python3 scripts/test-ui272-build844-window-root.py
-          python3 scripts/test-macho-load-command.py
-          python3 scripts/test-known-2.7-fixes.py
-          python3 scripts/test-package-ui272-ipa.py
+          set +e
+          status=0
+          : > integration-contracts.log
+          tests=(
+            scripts/test-ui272-no-legacy-loader-contract.py
+            scripts/test-ui272-framework-contract.py
+            scripts/test-ui272-device-regression-contract.py
+            scripts/test-ui272-build843-global-shell.py
+            scripts/test-ui272-build844-window-root.py
+            scripts/test-macho-load-command.py
+            scripts/test-known-2.7-fixes.py
+            scripts/test-package-ui272-ipa.py
+          )
+          for test in "${tests[@]}"; do
+            echo "=== $test ===" | tee -a integration-contracts.log
+            python3 "$test" 2>&1 | tee -a integration-contracts.log
+            code=${PIPESTATUS[0]}
+            if [ "$code" -ne 0 ]; then status=$code; fi
+          done
+          exit "$status"
+      - name: Upload integration contract log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AEMotionUI272-build844-integration-contracts
+          path: integration-contracts.log
+          if-no-files-found: error
+      - name: Fail on integration contract error
+        if: steps.integration_contracts.outcome == 'failure'
+        run: exit 1
       - name: Parse AE Motion UIKit sources
         run: |
           set -euo pipefail
