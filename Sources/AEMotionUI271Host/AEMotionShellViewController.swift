@@ -193,10 +193,15 @@ final class AEMotionShellViewController: UIViewController {
 
     private func destination(for action: AEMotionHomeAction) -> HomeShellDestination {
         switch action {
-        case .continueEditing, .newProject, .importProject, .camera, .assetLibrary: return .editor
-        case .threeDStudio, .worldStudio: return .detail
-        case .speedRemap, .cutout, .depthMap, .presetStudio: return .tool
-        case .tutorials, .templates: return .root
+        case .continueEditing, .newProject, .importProject, .camera, .assetLibrary:
+            return .editor
+        case .threeDStudio, .worldStudio:
+            return .detail
+        case .precompose, .tracking, .matte, .depthMap, .textTool,
+             .speedRemap, .cutout, .presetStudio:
+            return .tool
+        case .tutorials, .templates:
+            return .root
         }
     }
 
