@@ -1,5 +1,6 @@
 #if canImport(UIKit)
 import UIKit
+import AEMotionExtensionsCore
 
 @MainActor
 final class AEMotionRootContainerViewController: UIViewController {
