@@ -1,2 +1,2 @@
 #pragma once
-void AEMotionUI271BootstrapLinkAnchor(void);
+void AEMotionUI272BootstrapLinkAnchor(void);
