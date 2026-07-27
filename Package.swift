@@ -14,15 +14,20 @@ let package = Package(
         .library(
             name: "AEMotionExtensionsLegacySource",
             type: .dynamic,
-            targets: ["AEMotionExtensionsHost", "AEMotionBootstrap"]
+            targets: ["AEMotionExtensionsLegacySourceHost", "AEMotionLegacySourceBootstrap"]
         ),
     ],
     targets: [
         .target(name: "AEMotionExtensionsCore"),
-        .target(name: "AEMotionExtensionsHost", dependencies: ["AEMotionExtensionsCore"]),
         .target(
-            name: "AEMotionBootstrap",
-            dependencies: ["AEMotionExtensionsHost"],
+            name: "AEMotionExtensionsLegacySourceHost",
+            dependencies: ["AEMotionExtensionsCore"],
+            path: "Sources/AEMotionExtensionsHost"
+        ),
+        .target(
+            name: "AEMotionLegacySourceBootstrap",
+            dependencies: ["AEMotionExtensionsLegacySourceHost"],
+            path: "Sources/AEMotionBootstrap",
             publicHeadersPath: "include"
         ),
         .target(name: "AEMotionUI271Host", dependencies: ["AEMotionExtensionsCore"]),
