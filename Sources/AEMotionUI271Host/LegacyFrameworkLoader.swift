@@ -13,7 +13,7 @@ enum LegacyFrameworkLoader {
         if handle != nil { return true }
 #if canImport(Darwin)
         let frameworkBundle = Bundle(for: AEMotionUI271BundleToken.self)
-        let legacyURL = frameworkBundle.bundleURL.appendingPathComponent("AEMotionExtensionsLegacy")
+        let legacyURL = frameworkBundle.bundleURL.appendingPathComponent("AEMotionLegacy")
         guard FileManager.default.isExecutableFile(atPath: legacyURL.path) else { return false }
         guard let loaded = dlopen(legacyURL.path, RTLD_NOW | RTLD_GLOBAL) else { return false }
         handle = loaded
