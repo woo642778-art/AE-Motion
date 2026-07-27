@@ -11,9 +11,13 @@ enum AEMotionHomeAction: String, Sendable {
     case templates
     case threeDStudio
     case worldStudio
+    case precompose
+    case tracking
+    case matte
+    case depthMap
+    case textTool
     case speedRemap
     case cutout
-    case depthMap
     case presetStudio
     case camera
     case assetLibrary
@@ -36,7 +40,6 @@ final class AEMotionHomeViewController: UIViewController {
     private let recentTitle = UILabel()
     private let recentMetadata = UILabel()
     private let recentThumbnail = UIImageView()
-    private var recentProject: AEMotionRecentProjectPresentation?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -57,7 +60,6 @@ final class AEMotionHomeViewController: UIViewController {
     }
 
     func configureRecentProject(_ presentation: AEMotionRecentProjectPresentation?) {
-        recentProject = presentation
         if let presentation {
             recentTitle.text = presentation.title
             recentMetadata.text = presentation.metadata
@@ -67,11 +69,11 @@ final class AEMotionHomeViewController: UIViewController {
             recentProjectContainer.accessibilityValue = presentation.metadata
         } else {
             recentTitle.text = "Continue editing"
-            recentMetadata.text = "Open your most recent Alight Motion project"
+            recentMetadata.text = "Return to your latest timeline."
             recentThumbnail.image = nil
             recentThumbnail.isHidden = true
             recentProjectContainer.accessibilityLabel = "Continue editing"
-            recentProjectContainer.accessibilityValue = "Open your most recent project"
+            recentProjectContainer.accessibilityValue = "Return to your latest timeline"
         }
     }
 
@@ -82,7 +84,7 @@ final class AEMotionHomeViewController: UIViewController {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.alwaysBounceVertical = true
         scrollView.showsVerticalScrollIndicator = false
-        scrollView.contentInset.bottom = AEMotionProductTheme.navigationHeight + 30
+        scrollView.contentInset.bottom = AEMotionProductTheme.navigationHeight + 34
         view.addSubview(scrollView)
 
         contentStack.translatesAutoresizingMaskIntoConstraints = false
@@ -90,17 +92,16 @@ final class AEMotionHomeViewController: UIViewController {
         contentStack.spacing = AEMotionProductTheme.sectionSpacing
         scrollView.addSubview(contentStack)
 
-        contentStack.addArrangedSubview(makeProductHeader())
         contentStack.addArrangedSubview(makeWorkspaceHeader())
         contentStack.addArrangedSubview(makeRecentProjectCard())
-        contentStack.addArrangedSubview(makeSectionTitle("Start"))
+        contentStack.addArrangedSubview(makeSectionHeader(title: "Start", subtitle: "Create new work or import an asset."))
         contentStack.addArrangedSubview(makeStartGrid())
 
         let threeDCard = AEMotionSpotlightCard(
             title: "3D Studio",
-            subtitle: "Model, animate, light, and render in a focused mobile workspace.",
+            subtitle: "Create, import, animate, and render editable 3D scenes.",
             systemImage: "cube.transparent.fill",
-            badge: "PRO",
+            badge: "3D",
             accessibilityIdentifier: "aemotion.home.3d-studio"
         )
         threeDCard.addAction(UIAction { [weak self] _ in self?.send(.threeDStudio) }, for: .touchUpInside)
@@ -108,7 +109,7 @@ final class AEMotionHomeViewController: UIViewController {
 
         let worldCard = AEMotionSpotlightCard(
             title: "Real-Time World Studio",
-            subtitle: "Build actor, component, camera, and environment driven worlds.",
+            subtitle: "Edit actor hierarchy, components, cameras, lights, and world assets.",
             systemImage: "globe.americas.fill",
             badge: "LIVE",
             accessibilityIdentifier: "aemotion.home.world-studio"
@@ -116,78 +117,39 @@ final class AEMotionHomeViewController: UIViewController {
         worldCard.addAction(UIAction { [weak self] _ in self?.send(.worldStudio) }, for: .touchUpInside)
         contentStack.addArrangedSubview(worldCard)
 
-        contentStack.addArrangedSubview(makeSectionTitle("Quick tools"))
+        contentStack.addArrangedSubview(makeSectionHeader(title: "Quick tools", subtitle: "Open directly in the current project."))
         contentStack.addArrangedSubview(makeQuickTools())
 
         NSLayoutConstraint.activate([
             ambientField.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             ambientField.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             ambientField.topAnchor.constraint(equalTo: view.topAnchor),
-            ambientField.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.48),
+            ambientField.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.42),
             scrollView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             contentStack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: AEMotionProductTheme.horizontalMargin),
             contentStack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -AEMotionProductTheme.horizontalMargin),
             contentStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 18),
-            contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -24),
+            contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -28),
             contentStack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -2 * AEMotionProductTheme.horizontalMargin),
         ])
     }
 
-    private func makeProductHeader() -> UIView {
+    private func makeWorkspaceHeader() -> UIView {
         let mark = UILabel()
-        mark.text = "AE"
-        mark.font = UIFont.systemFont(ofSize: 14, weight: .black)
-        mark.textColor = .white
+        mark.translatesAutoresizingMaskIntoConstraints = false
+        mark.text = "Ae"
         mark.textAlignment = .center
-        mark.backgroundColor = AEMotionProductTheme.accentPurple
+        mark.font = UIFont.systemFont(ofSize: 15, weight: .black)
+        mark.textColor = .white
+        mark.backgroundColor = AEMotionProductTheme.accentPurple.withAlphaComponent(0.52)
         mark.layer.cornerRadius = 10
         mark.layer.cornerCurve = .continuous
         mark.clipsToBounds = true
-        mark.translatesAutoresizingMaskIntoConstraints = false
         mark.accessibilityLabel = "AE Motion"
 
-        let name = UILabel()
-        name.text = "AE Motion"
-        name.font = UIFont.systemFont(ofSize: 17, weight: .bold)
-        name.textColor = AEMotionProductTheme.primaryText
-
-        let version = UILabel()
-        version.text = "v\(AEMotionRelease.marketingVersion)"
-        version.font = AEMotionProductTheme.captionFont()
-        version.textColor = AEMotionProductTheme.secondaryText
-
-        let text = UIStackView(arrangedSubviews: [name, version])
-        text.axis = .vertical
-        text.spacing = 1
-
-        let spacer = UIView()
-        let release = UIButton(type: .system)
-        var configuration = UIButton.Configuration.tinted()
-        configuration.image = UIImage(systemName: "sparkles")
-        configuration.title = "What’s new"
-        configuration.imagePadding = 5
-        configuration.cornerStyle = .capsule
-        configuration.baseForegroundColor = AEMotionProductTheme.accentViolet
-        configuration.baseBackgroundColor = AEMotionProductTheme.accentPurple.withAlphaComponent(0.16)
-        release.configuration = configuration
-        release.accessibilityIdentifier = "aemotion.home.release-history"
-
-        let row = UIStackView(arrangedSubviews: [mark, text, spacer, release])
-        row.axis = .horizontal
-        row.alignment = .center
-        row.spacing = 10
-        NSLayoutConstraint.activate([
-            mark.widthAnchor.constraint(equalToConstant: 38),
-            mark.heightAnchor.constraint(equalToConstant: 38),
-            release.heightAnchor.constraint(greaterThanOrEqualToConstant: AEMotionProductTheme.minimumTouchTarget),
-        ])
-        return row
-    }
-
-    private func makeWorkspaceHeader() -> UIView {
         let title = UILabel()
         title.text = "Workspace"
         title.font = AEMotionProductTheme.titleFont()
@@ -196,17 +158,30 @@ final class AEMotionHomeViewController: UIViewController {
         title.accessibilityIdentifier = "aemotion.home.workspace-title"
 
         let subtitle = UILabel()
-        subtitle.text = "Create faster. Push motion further."
+        subtitle.text = "Motion design workspace"
         subtitle.font = AEMotionProductTheme.bodyFont()
         subtitle.textColor = AEMotionProductTheme.secondaryText
         subtitle.adjustsFontForContentSizeCategory = true
 
-        let stack = UIStackView(arrangedSubviews: [title, subtitle])
-        stack.axis = .vertical
-        stack.spacing = 4
-        stack.isLayoutMarginsRelativeArrangement = true
-        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 6, leading: 0, bottom: 2, trailing: 0)
-        return stack
+        let labels = UIStackView(arrangedSubviews: [title, subtitle])
+        labels.axis = .vertical
+        labels.spacing = 3
+
+        let version = UILabel()
+        version.text = "v\(AEMotionRelease.marketingVersion)"
+        version.font = AEMotionProductTheme.captionFont()
+        version.textColor = AEMotionProductTheme.accentViolet
+        version.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let row = UIStackView(arrangedSubviews: [mark, labels, UIView(), version])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 11
+        NSLayoutConstraint.activate([
+            mark.widthAnchor.constraint(equalToConstant: 42),
+            mark.heightAnchor.constraint(equalToConstant: 42),
+        ])
+        return row
     }
 
     private func makeRecentProjectCard() -> UIView {
@@ -219,35 +194,35 @@ final class AEMotionHomeViewController: UIViewController {
         recentThumbnail.translatesAutoresizingMaskIntoConstraints = false
         recentThumbnail.contentMode = .scaleAspectFill
         recentThumbnail.clipsToBounds = true
-        recentThumbnail.layer.cornerRadius = 16
+        recentThumbnail.layer.cornerRadius = 15
         recentThumbnail.layer.cornerCurve = .continuous
         recentThumbnail.backgroundColor = AEMotionProductTheme.elevatedSurface
         recentThumbnail.isAccessibilityElement = false
 
-        recentTitle.translatesAutoresizingMaskIntoConstraints = false
         recentTitle.font = AEMotionProductTheme.cardTitleFont()
         recentTitle.textColor = AEMotionProductTheme.primaryText
         recentTitle.numberOfLines = 2
         recentTitle.adjustsFontForContentSizeCategory = true
 
-        recentMetadata.translatesAutoresizingMaskIntoConstraints = false
         recentMetadata.font = AEMotionProductTheme.bodyFont()
         recentMetadata.textColor = AEMotionProductTheme.secondaryText
         recentMetadata.numberOfLines = 2
         recentMetadata.adjustsFontForContentSizeCategory = true
 
-        let text = UIStackView(arrangedSubviews: [recentTitle, recentMetadata])
+        let eyebrow = UILabel()
+        eyebrow.text = "RECENT PROJECT"
+        eyebrow.font = UIFont.systemFont(ofSize: 12, weight: .bold)
+        eyebrow.textColor = AEMotionProductTheme.accentViolet
+
+        let text = UIStackView(arrangedSubviews: [eyebrow, recentTitle, recentMetadata])
         text.translatesAutoresizingMaskIntoConstraints = false
         text.axis = .vertical
-        text.spacing = 5
+        text.spacing = 4
 
-        let arrow = UIImageView(image: UIImage(systemName: "play.fill"))
+        let arrow = UIImageView(image: UIImage(systemName: "chevron.right"))
         arrow.translatesAutoresizingMaskIntoConstraints = false
-        arrow.tintColor = .white
-        arrow.backgroundColor = AEMotionProductTheme.accentPurple
-        arrow.contentMode = .center
-        arrow.layer.cornerRadius = 20
-        arrow.layer.cornerCurve = .continuous
+        arrow.tintColor = AEMotionProductTheme.secondaryText
+        arrow.contentMode = .scaleAspectFit
         arrow.isAccessibilityElement = false
 
         recentProjectContainer.addSubview(recentThumbnail)
@@ -258,21 +233,21 @@ final class AEMotionHomeViewController: UIViewController {
             recentThumbnail.leadingAnchor.constraint(equalTo: recentProjectContainer.leadingAnchor, constant: 14),
             recentThumbnail.topAnchor.constraint(equalTo: recentProjectContainer.topAnchor, constant: 14),
             recentThumbnail.bottomAnchor.constraint(equalTo: recentProjectContainer.bottomAnchor, constant: -14),
-            recentThumbnail.widthAnchor.constraint(equalTo: recentThumbnail.heightAnchor, multiplier: 1.32),
+            recentThumbnail.widthAnchor.constraint(equalTo: recentThumbnail.heightAnchor, multiplier: 1.18),
             text.leadingAnchor.constraint(equalTo: recentThumbnail.trailingAnchor, constant: 14),
             text.centerYAnchor.constraint(equalTo: recentProjectContainer.centerYAnchor),
-            text.trailingAnchor.constraint(lessThanOrEqualTo: arrow.leadingAnchor, constant: -12),
-            arrow.trailingAnchor.constraint(equalTo: recentProjectContainer.trailingAnchor, constant: -16),
+            text.trailingAnchor.constraint(lessThanOrEqualTo: arrow.leadingAnchor, constant: -10),
+            arrow.trailingAnchor.constraint(equalTo: recentProjectContainer.trailingAnchor, constant: -17),
             arrow.centerYAnchor.constraint(equalTo: recentProjectContainer.centerYAnchor),
-            arrow.widthAnchor.constraint(equalToConstant: 40),
-            arrow.heightAnchor.constraint(equalToConstant: 40),
+            arrow.widthAnchor.constraint(equalToConstant: 18),
+            arrow.heightAnchor.constraint(equalToConstant: 24),
         ])
         return recentProjectContainer
     }
 
     private func makeStartGrid() -> UIView {
         let actions: [(String, String, AEMotionHomeAction, String)] = [
-            ("New Project", "plus", .newProject, "aemotion.home.new"),
+            ("New project", "plus", .newProject, "aemotion.home.new"),
             ("Import", "square.and.arrow.down", .importProject, "aemotion.home.import"),
             ("Tutorials", "play.rectangle.fill", .tutorials, "aemotion.home.tutorial"),
             ("Templates", "sparkles.rectangle.stack", .templates, "aemotion.home.templates"),
@@ -297,10 +272,11 @@ final class AEMotionHomeViewController: UIViewController {
 
     private func makeQuickTools() -> UIView {
         let tools: [(String, String, AEMotionHomeAction)] = [
-            ("Speed Remap", "speedometer", .speedRemap),
-            ("Cutout", "person.crop.rectangle", .cutout),
-            ("Depth Map", "square.3.layers.3d.down.right", .depthMap),
-            ("Preset Studio", "slider.horizontal.3", .presetStudio),
+            ("Pre-comp", "square.3.layers.3d", .precompose),
+            ("Track", "viewfinder", .tracking),
+            ("Matte", "person.crop.rectangle", .matte),
+            ("Depth", "square.3.layers.3d.down.right", .depthMap),
+            ("Text", "textformat", .textTool),
         ]
         let content = UIStackView()
         content.axis = .horizontal
@@ -328,13 +304,24 @@ final class AEMotionHomeViewController: UIViewController {
         return scroll
     }
 
-    private func makeSectionTitle(_ value: String) -> UIView {
-        let label = UILabel()
-        label.text = value
-        label.font = AEMotionProductTheme.sectionTitleFont()
-        label.textColor = AEMotionProductTheme.primaryText
-        label.adjustsFontForContentSizeCategory = true
-        return label
+    private func makeSectionHeader(title: String, subtitle: String) -> UIView {
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.font = AEMotionProductTheme.sectionTitleFont()
+        titleLabel.textColor = AEMotionProductTheme.primaryText
+        titleLabel.adjustsFontForContentSizeCategory = true
+
+        let subtitleLabel = UILabel()
+        subtitleLabel.text = subtitle
+        subtitleLabel.font = AEMotionProductTheme.bodyFont()
+        subtitleLabel.textColor = AEMotionProductTheme.secondaryText
+        subtitleLabel.adjustsFontForContentSizeCategory = true
+        subtitleLabel.numberOfLines = 0
+
+        let stack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+        stack.axis = .vertical
+        stack.spacing = 3
+        return stack
     }
 
     private func send(_ action: AEMotionHomeAction) {
@@ -359,12 +346,13 @@ private final class AEMotionActionTile: UIButton {
         configuration.baseBackgroundColor = AEMotionProductTheme.surface
         configuration.baseForegroundColor = AEMotionProductTheme.primaryText
         configuration.cornerStyle = .large
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 15, leading: 10, bottom: 15, trailing: 10)
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 15, leading: 8, bottom: 15, trailing: 8)
         self.configuration = configuration
         layer.borderColor = AEMotionProductTheme.separator.cgColor
         layer.borderWidth = 1 / UIScreen.main.scale
         heightAnchor.constraint(greaterThanOrEqualToConstant: 92).isActive = true
     }
+
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
 
@@ -378,13 +366,16 @@ private final class AEMotionQuickToolTile: UIButton {
         configuration.image = UIImage(systemName: systemImage)
         configuration.imagePlacement = .top
         configuration.imagePadding = 7
-        configuration.baseForegroundColor = AEMotionProductTheme.accentViolet
-        configuration.baseBackgroundColor = AEMotionProductTheme.accentPurple.withAlphaComponent(0.13)
+        configuration.baseForegroundColor = AEMotionProductTheme.primaryText
+        configuration.baseBackgroundColor = AEMotionProductTheme.surface
         configuration.cornerStyle = .large
         self.configuration = configuration
-        widthAnchor.constraint(equalToConstant: 112).isActive = true
+        layer.borderColor = AEMotionProductTheme.separator.cgColor
+        layer.borderWidth = 1 / UIScreen.main.scale
+        widthAnchor.constraint(equalToConstant: 104).isActive = true
         heightAnchor.constraint(equalToConstant: 92).isActive = true
     }
+
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
 #endif
