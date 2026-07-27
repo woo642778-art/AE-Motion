@@ -24,6 +24,11 @@ checks = {
         r"presentedViewController\s*==\s*nil|presentedViewController\s*!=\s*nil.*return",
         True,
     ),
+    "root wrapping waits for full-screen launch overlays": (
+        coordinator,
+        r"hasBlockingLaunchOverlay.*coverage|coverage.*hasBlockingLaunchOverlay",
+        True,
+    ),
     "Build 845 packager exists": (packager, r"BUILD_NUMBER\s*=\s*845", True),
     "Blatant dylib file removed": (packager, r"BLATANT_RELATIVE.*unlink\(", True),
     "Blatant load command removed": (packager, r"remove_load_dylib\(.*BLATANT_LOAD_PATH", True),
