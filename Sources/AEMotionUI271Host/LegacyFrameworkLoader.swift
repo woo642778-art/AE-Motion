@@ -7,7 +7,7 @@ import Darwin
 final class AEMotionUI271BundleToken: NSObject {}
 
 enum LegacyFrameworkLoader {
-    private static var handle: UnsafeMutableRawPointer?
+    nonisolated(unsafe) private static var handle: UnsafeMutableRawPointer?
 
     static func loadLegacyFramework() -> Bool {
         if handle != nil { return true }
