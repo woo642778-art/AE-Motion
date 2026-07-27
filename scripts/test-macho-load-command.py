@@ -15,6 +15,7 @@ from macho_load_command import (  # noqa: E402
     MachOError,
     append_load_dylib,
     inspect_macho,
+    remove_load_dylib,
 )
 
 PATH = "@rpath/AEMotionUI272.framework/AEMotionUI272"
@@ -56,6 +57,21 @@ class MachOLoadCommandTests(unittest.TestCase):
         once = append_load_dylib(make_fixture(), PATH)
         twice = append_load_dylib(once, PATH)
         self.assertEqual(twice, once)
+
+    def test_removes_exact_command_without_changing_sections(self) -> None:
+        original = make_fixture()
+        with_command = append_load_dylib(original, PATH)
+        before = inspect_macho(with_command)
+        removed = remove_load_dylib(with_command, PATH)
+        after = inspect_macho(removed)
+        self.assertEqual(after.ncmds, before.ncmds - 1)
+        self.assertNotIn(PATH, after.dylib_paths)
+        self.assertEqual(removed[before.first_section_offset:], with_command[before.first_section_offset:])
+        self.assertEqual(after.commands[0].payload, inspect_macho(original).commands[0].payload)
+
+    def test_missing_removal_is_idempotent(self) -> None:
+        original = make_fixture()
+        self.assertEqual(remove_load_dylib(original, PATH), original)
 
     def test_rejects_nonzero_padding(self) -> None:
         with self.assertRaisesRegex(MachOError, "zero-filled"):
