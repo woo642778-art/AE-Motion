@@ -130,7 +130,7 @@ private final class AEMotionLaunchExperienceViewController: UIViewController {
     private let channelStack = UIStackView()
     private let progressView = UIProgressView(progressViewStyle: .default)
     private let ringLayer = CAShapeLayer()
-    private var progressTimer: Timer?
+    nonisolated(unsafe) private var progressTimer: Timer?
 
     override func viewDidLoad() {
         super.viewDidLoad()
