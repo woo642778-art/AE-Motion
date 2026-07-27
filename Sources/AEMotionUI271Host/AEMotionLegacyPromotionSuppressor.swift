@@ -52,7 +52,7 @@ enum AEMotionLegacyPromotionSuppressor {
     private static func installRuntimeHooks() {
         var count: UInt32 = 0
         guard let classes = objc_copyClassList(&count) else { return }
-        defer { free(classes) }
+        defer { free(UnsafeMutableRawPointer(classes)) }
 
         for index in 0..<Int(count) {
             let cls: AnyClass = classes[index]
