@@ -132,6 +132,13 @@ def inspect_macho(binary: bytes) -> MachOInfo:
     )
 
 
+def _command_dylib_path(command: LoadCommand) -> str | None:
+    if command.cmd not in DYLIB_COMMANDS or command.cmdsize < 24:
+        return None
+    name_offset = struct.unpack_from("<I", command.payload, 8)[0]
+    return _read_c_string(command.payload, name_offset, command.cmdsize)
+
+
 def make_load_dylib_command(dylib_path: str) -> bytes:
     if not dylib_path or "\0" in dylib_path:
         raise MachOError("invalid dylib path")
@@ -173,4 +180,40 @@ def append_load_dylib(binary: bytes, dylib_path: str) -> bytes:
     for before, after in zip(info.commands, updated.commands[: len(info.commands)]):
         if before.payload != after.payload:
             raise MachOError("an existing load command changed")
+    return result
+
+
+def remove_load_dylib(binary: bytes, dylib_path: str) -> bytes:
+    info = inspect_macho(binary)
+    matching = [command for command in info.commands if _command_dylib_path(command) == dylib_path]
+    if not matching:
+        return binary
+    if len(matching) != 1:
+        raise MachOError("dylib path appears more than once")
+
+    target = matching[0]
+    retained = [command.payload for command in info.commands if command is not target]
+    new_commands = b"".join(retained)
+    new_sizeofcmds = len(new_commands)
+    new_end = HEADER_SIZE_64 + new_sizeofcmds
+    if new_end > info.first_section_offset:
+        raise MachOError("rebuilt load commands overlap first section")
+
+    patched = bytearray(binary)
+    patched[HEADER_SIZE_64:info.command_end] = b"\0" * info.sizeofcmds
+    patched[HEADER_SIZE_64:new_end] = new_commands
+    struct.pack_into("<I", patched, 16, info.ncmds - 1)
+    struct.pack_into("<I", patched, 20, new_sizeofcmds)
+
+    result = bytes(patched)
+    updated = inspect_macho(result)
+    if dylib_path in updated.dylib_paths:
+        raise MachOError("removed dylib command is still present")
+    if result[info.first_section_offset:] != binary[info.first_section_offset:]:
+        raise MachOError("executable section bytes changed")
+
+    expected = [command.payload for command in info.commands if command is not target]
+    actual = [command.payload for command in updated.commands]
+    if actual != expected:
+        raise MachOError("non-target load commands changed")
     return result
