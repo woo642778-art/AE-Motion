@@ -18,21 +18,22 @@ final class AEMotionShellViewController: UIViewController {
     private let passthroughView = AEMotionShellPassthroughView()
     private let homeController = AEMotionHomeViewController()
     private let tutorialController = AEMotionTutorialViewController()
-    private var navigationBottomConstraint: NSLayoutConstraint?
-    private var currentHost: UIViewController?
     private var showsHomeContent = true
-    private(set) var rootControllers: [HomeShellTab: UIViewController] = [:]
 
     private init() {
         super.init(nibName: nil, bundle: nil)
-        rootControllers[.home] = homeController
-        rootControllers[.tutorials] = tutorialController
-        homeController.actionHandler = { [weak self] action in self?.handleHomeAction(action) }
+        homeController.actionHandler = { [weak self] action in
+            self?.handleHomeAction(action)
+        }
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
-    override func loadView() { view = passthroughView }
+    override func loadView() {
+        view = passthroughView
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -51,21 +52,22 @@ final class AEMotionShellViewController: UIViewController {
         bottomChromeView.isUserInteractionEnabled = true
         view.addSubview(bottomChromeView)
 
-        navigationView.onSelect = { [weak self] tab in self?.handleTabSelection(tab) }
+        navigationView.onSelect = { [weak self] tab in
+            self?.handleTabSelection(tab)
+        }
         view.addSubview(navigationView)
 
         configureCreateTray()
         view.addSubview(createTray)
 
-        navigationBottomConstraint = navigationView.bottomAnchor.constraint(
-            equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-            constant: -6
-        )
         NSLayoutConstraint.activate([
             headerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             headerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             headerView.topAnchor.constraint(equalTo: view.topAnchor),
-            headerView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 72),
+            headerView.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor,
+                constant: 72
+            ),
 
             contentContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             contentContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -77,40 +79,45 @@ final class AEMotionShellViewController: UIViewController {
             bottomChromeView.topAnchor.constraint(equalTo: navigationView.topAnchor, constant: -18),
             bottomChromeView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            navigationView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
-            navigationView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
-            navigationBottomConstraint!,
+            navigationView.leadingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.leadingAnchor,
+                constant: 12
+            ),
+            navigationView.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -12
+            ),
+            navigationView.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -6
+            ),
+
             createTray.centerXAnchor.constraint(equalTo: navigationView.centerXAnchor),
             createTray.bottomAnchor.constraint(equalTo: navigationView.topAnchor, constant: -10),
-            createTray.widthAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.widthAnchor, constant: -28),
+            createTray.widthAnchor.constraint(
+                lessThanOrEqualTo: view.safeAreaLayoutGuide.widthAnchor,
+                constant: -28
+            ),
         ])
+
         installCustomControllersIfNeeded()
+        passthroughView.interactiveRegions = [
+            headerView,
+            bottomChromeView,
+            navigationView,
+            createTray,
+            contentContainer,
+        ]
         updateAppearance(animated: false)
     }
 
-    func attach(to host: UIViewController, tab: HomeShellTab, showsHomeContent: Bool) {
-        if parent !== host {
-            detachFromCurrentHost()
-            host.addChild(self)
-            view.translatesAutoresizingMaskIntoConstraints = false
-            host.view.addSubview(view)
-            NSLayoutConstraint.activate([
-                view.leadingAnchor.constraint(equalTo: host.view.leadingAnchor),
-                view.trailingAnchor.constraint(equalTo: host.view.trailingAnchor),
-                view.topAnchor.constraint(equalTo: host.view.topAnchor),
-                view.bottomAnchor.constraint(equalTo: host.view.bottomAnchor),
-            ])
-            didMove(toParent: host)
-            currentHost = host
-        }
-
+    func configure(tab: HomeShellTab, showsHomeContent: Bool) {
         self.showsHomeContent = showsHomeContent
         if tab != .create {
             HomeShellReducer.reduce(state: &state, event: .selectTab(tab))
-            rootControllers[tab] = host
         }
+        HomeShellReducer.reduce(state: &state, event: .returnToRoot)
         updateAppearance(animated: false)
-        host.view.bringSubviewToFront(view)
     }
 
     func openNonRoot(_ destination: HomeShellDestination) {
@@ -120,15 +127,17 @@ final class AEMotionShellViewController: UIViewController {
 
     func returnToRoot(tab: HomeShellTab) {
         HomeShellReducer.reduce(state: &state, event: .selectTab(tab))
+        HomeShellReducer.reduce(state: &state, event: .returnToRoot)
         updateAppearance(animated: true)
     }
 
-    func detachFromCurrentHost() {
-        guard parent != nil else { return }
-        willMove(toParent: nil)
-        view.removeFromSuperview()
-        removeFromParent()
-        currentHost = nil
+    func prepareForHiddenState() {
+        setCreateTrayExpanded(false)
+        homeController.view.isHidden = true
+        tutorialController.view.isHidden = true
+        contentContainer.isHidden = true
+        contentContainer.isUserInteractionEnabled = false
+        passthroughView.passesThroughContentArea = true
     }
 
     private func installCustomControllersIfNeeded() {
@@ -162,9 +171,17 @@ final class AEMotionShellViewController: UIViewController {
         createTray.layer.borderColor = AEMotionProductTheme.separator.cgColor
         createTray.layer.borderWidth = 1 / UIScreen.main.scale
         createTray.isLayoutMarginsRelativeArrangement = true
-        createTray.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
+        createTray.directionalLayoutMargins = NSDirectionalEdgeInsets(
+            top: 8,
+            leading: 8,
+            bottom: 8,
+            trailing: 8
+        )
         createTray.alpha = 0
-        createTray.transform = CGAffineTransform(translationX: 0, y: 12).scaledBy(x: 0.92, y: 0.92)
+        createTray.transform = CGAffineTransform(
+            translationX: 0,
+            y: 12
+        ).scaledBy(x: 0.92, y: 0.92)
         createTray.isHidden = true
         createTray.accessibilityIdentifier = "aemotion.shell.create-tray"
 
@@ -201,6 +218,7 @@ final class AEMotionShellViewController: UIViewController {
             return
         }
         HomeShellReducer.reduce(state: &state, event: .selectTab(tab))
+        HomeShellReducer.reduce(state: &state, event: .returnToRoot)
         updateAppearance(animated: true)
         AEMotionMotionSystem.selectionHaptic()
         routeHandler?(tab)
@@ -213,7 +231,10 @@ final class AEMotionShellViewController: UIViewController {
         case .templates:
             handleTabSelection(.templates)
         default:
-            HomeShellReducer.reduce(state: &state, event: .openDestination(destination(for: action)))
+            HomeShellReducer.reduce(
+                state: &state,
+                event: .openDestination(destination(for: action))
+            )
             updateAppearance(animated: true)
             actionHandler?(action)
         }
@@ -234,8 +255,13 @@ final class AEMotionShellViewController: UIViewController {
     }
 
     private func setCreateTrayExpanded(_ expanded: Bool) {
-        HomeShellReducer.reduce(state: &state, event: .setCreateTrayExpanded(expanded))
-        if state.isCreateTrayExpanded { createTray.isHidden = false }
+        HomeShellReducer.reduce(
+            state: &state,
+            event: .setCreateTrayExpanded(expanded)
+        )
+        if state.isCreateTrayExpanded {
+            createTray.isHidden = false
+        }
         let changes = { [weak self] in
             guard let self else { return }
             self.createTray.alpha = self.state.isCreateTrayExpanded ? 1 : 0
@@ -243,7 +269,11 @@ final class AEMotionShellViewController: UIViewController {
                 ? .identity
                 : CGAffineTransform(translationX: 0, y: 12).scaledBy(x: 0.92, y: 0.92)
         }
-        _ = AEMotionMotionSystem.spring(duration: 0.34, dampingRatio: 0.82, animations: changes) { [weak self] _ in
+        _ = AEMotionMotionSystem.spring(
+            duration: 0.34,
+            dampingRatio: 0.82,
+            animations: changes
+        ) { [weak self] _ in
             guard let self else { return }
             self.createTray.isHidden = !self.state.isCreateTrayExpanded
         }
@@ -252,21 +282,27 @@ final class AEMotionShellViewController: UIViewController {
     private func updateAppearance(animated: Bool) {
         guard isViewLoaded else { return }
         let shouldShowNavigation = state.isRootNavigationVisible
-        let shouldShowHome = showsHomeContent && state.selectedTab == .home && state.destination == .root
-        let shouldShowTutorial = state.selectedTab == .tutorials && state.destination == .root
+        let shouldShowHome = showsHomeContent
+            && state.selectedTab == .home
+            && state.destination == .root
+        let shouldShowTutorial = state.selectedTab == .tutorials
+            && state.destination == .root
         let shouldShowCustomContent = shouldShowHome || shouldShowTutorial
 
-        passthroughView.passthroughOutsideNavigation = !shouldShowCustomContent
         contentContainer.isHidden = !shouldShowCustomContent
         contentContainer.isUserInteractionEnabled = shouldShowCustomContent
         homeController.view.isHidden = !shouldShowHome
         tutorialController.view.isHidden = !shouldShowTutorial
+        passthroughView.passesThroughContentArea = !shouldShowCustomContent
+        passthroughView.contentRegion = contentContainer
+
         headerView.update(tab: state.selectedTab)
         navigationView.setSelectedTab(state.selectedTab, animated: animated)
-
         headerView.isHidden = !shouldShowNavigation
         bottomChromeView.isHidden = !shouldShowNavigation
-        if shouldShowNavigation { navigationView.isHidden = false }
+        if shouldShowNavigation {
+            navigationView.isHidden = false
+        }
 
         let changes = { [weak self] in
             guard let self else { return }
@@ -278,13 +314,19 @@ final class AEMotionShellViewController: UIViewController {
                 : CGAffineTransform(translationX: 0, y: 32)
         }
         if animated {
-            _ = AEMotionMotionSystem.spring(duration: 0.42, dampingRatio: 0.84, animations: changes)
+            _ = AEMotionMotionSystem.spring(
+                duration: 0.42,
+                dampingRatio: 0.84,
+                animations: changes
+            )
         } else {
             changes()
         }
         navigationView.isUserInteractionEnabled = shouldShowNavigation
         navigationView.isHidden = !shouldShowNavigation && !animated
-        if !shouldShowNavigation { setCreateTrayExpanded(false) }
+        if !shouldShowNavigation {
+            setCreateTrayExpanded(false)
+        }
     }
 }
 
@@ -334,12 +376,14 @@ private final class AEMotionShellHeaderView: UIView {
             mark.heightAnchor.constraint(equalToConstant: 46),
             row.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
             row.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -13),
         ])
         update(tab: .home)
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     func update(tab: HomeShellTab) {
         switch tab {
@@ -354,11 +398,23 @@ private final class AEMotionShellHeaderView: UIView {
 
 @MainActor
 private final class AEMotionShellPassthroughView: UIView {
-    var passthroughOutsideNavigation = false
+    var passesThroughContentArea = false
+    weak var contentRegion: UIView?
+    var interactiveRegions: [UIView] = []
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         let hit = super.hitTest(point, with: event)
-        guard passthroughOutsideNavigation, hit === self else { return hit }
+        guard passesThroughContentArea else { return hit }
+        guard let hit else { return nil }
+
+        if interactiveRegions.contains(where: { region in
+            !region.isHidden
+                && region.alpha > 0.01
+                && (hit === region || hit.isDescendant(of: region))
+                && region !== contentRegion
+        }) {
+            return hit
+        }
         return nil
     }
 }
