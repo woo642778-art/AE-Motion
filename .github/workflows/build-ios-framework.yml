@@ -7,8 +7,8 @@ on:
       - main
       - fix/home-shell-ui-restoration
 jobs:
-  build:
-    runs-on: macos-15
+  validate:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Resolve package
@@ -31,10 +31,38 @@ jobs:
           for test in scripts/test-ui271-*-contract.py; do
             python3 "$test"
           done
+      - name: Parse AE Motion 2.7.1 UIKit sources
+        run: |
+          set -euo pipefail
+          for source in Sources/AEMotionUI271Host/*.swift; do
+            swiftc -frontend -parse "$source"
+          done
       - name: Verify AE Motion 2.7.1 packaging
         run: python3 scripts/test-package-ui271-ipa.py
+
+  build-ios:
+    needs: validate
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve package
+        run: swift package resolve
       - name: Build iOS framework
-        run: ./scripts/build-ios-framework.sh
+        id: ios_build
+        continue-on-error: true
+        run: ./scripts/build-ios-framework.sh > build-ios.log 2>&1
+      - name: Upload iOS build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AEMotionExtensionsHost-2.7.1-build-log
+          path: build-ios.log
+          if-no-files-found: ignore
+      - name: Fail on iOS build error
+        if: steps.ios_build.outcome == 'failure'
+        run: |
+          tail -n 300 build-ios.log
+          exit 1
       - name: Inspect framework
         run: |
           file build/AEMotionExtensionsHost.framework/AEMotionExtensionsHost
