@@ -30,6 +30,11 @@ final class AEMotionHostSurfaceAdapter {
     private var hiddenHomeViews: [HiddenViewState] = []
     private var legacyControls: [AEMotionHomeAction: UIControl] = [:]
     private var hasPreparedHome = false
+    private var refreshGeneration = 0
+    private lazy var projectCoordinator: AEMotionProjectActionCoordinator? = {
+        guard let controller else { return nil }
+        return AEMotionProjectActionCoordinator(hostController: controller)
+    }()
 
     init(controller: UIViewController, role: AEMotionHostSurfaceRole) {
         self.controller = controller
@@ -38,14 +43,22 @@ final class AEMotionHostSurfaceAdapter {
 
     func prepareForRootPresentation() {
         guard let controller else { return }
-        switch role {
-        case .home:
-            captureLegacyControls(in: controller.view)
-            hideOriginalHomeSurface(in: controller)
-        case .projects, .templates:
-            hideKnownLegacyOverlays(in: controller.view)
-            normalizeHostSurface(in: controller.view)
-        }
+        captureLegacyControls(in: controller.view)
+        hideNativeRootChrome(from: controller)
+        applyRootPresentation(to: controller)
+        refreshGeneration += 1
+        scheduleRefresh(generation: refreshGeneration, remaining: 24)
+    }
+
+    func refreshForRootPresentation() {
+        guard let controller else { return }
+        captureLegacyControls(in: controller.view)
+        hideNativeRootChrome(from: controller)
+        applyRootPresentation(to: controller)
+    }
+
+    func prepareForNonRootPresentation() {
+        refreshGeneration += 1
     }
 
     func restoreOriginalHomeSurface() {
@@ -60,11 +73,7 @@ final class AEMotionHostSurfaceAdapter {
 
     @discardableResult
     func perform(_ action: AEMotionHomeAction) -> Bool {
-        if let control = legacyControls[action] {
-            control.sendActions(for: .touchUpInside)
-            return true
-        }
-        return false
+        projectCoordinator?.perform(action, controls: legacyControls) ?? false
     }
 
     @discardableResult
@@ -107,6 +116,35 @@ final class AEMotionHostSurfaceAdapter {
         return true
     }
 
+    private func applyRootPresentation(to controller: UIViewController) {
+        switch role {
+        case .home:
+            hideOriginalHomeSurface(in: controller)
+        case .projects, .templates:
+            hideKnownLegacyOverlays(in: controller.view)
+            normalizeHostSurface(in: controller.view)
+        }
+    }
+
+    private func scheduleRefresh(generation: Int, remaining: Int) {
+        guard remaining > 0 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) { [weak self] in
+            guard let self, generation == self.refreshGeneration else { return }
+            self.refreshForRootPresentation()
+            self.scheduleRefresh(generation: generation, remaining: remaining - 1)
+        }
+    }
+
+    private func hideNativeRootChrome(from controller: UIViewController) {
+        if let tabController = findTabController(from: controller) {
+            tabController.tabBar.isHidden = true
+            tabController.tabBar.isUserInteractionEnabled = false
+        }
+        if role == .home {
+            controller.navigationController?.setNavigationBarHidden(true, animated: false)
+        }
+    }
+
     private func hideOriginalHomeSurface(in controller: UIViewController) {
         guard !hasPreparedHome else { return }
         hasPreparedHome = true
@@ -127,49 +165,61 @@ final class AEMotionHostSurfaceAdapter {
     private func captureLegacyControls(in root: UIView) {
         for view in root.aemotionAllDescendantsIncludingSelf() {
             guard let control = view as? UIControl,
-                  let identifier = view.accessibilityIdentifier else { continue }
-            switch identifier {
-            case "aemotion.home.continue": legacyControls[.continueEditing] = control
-            case "aemotion.home.new": legacyControls[.newProject] = control
-            case "aemotion.home.import": legacyControls[.importProject] = control
-            case "aemotion.home.tutorial": legacyControls[.tutorials] = control
-            case "aemotion.home.templates": legacyControls[.templates] = control
-            case "aemotion.home.3d-studio": legacyControls[.threeDStudio] = control
-            case "aemotion.home.world-studio": legacyControls[.worldStudio] = control
-            default:
-                guard identifier.hasPrefix("aemotion.home.tool.") else { continue }
-                let suffix = identifier.lowercased()
-                if suffix.contains("speed") { legacyControls[.speedRemap] = control }
-                else if suffix.contains("cutout") { legacyControls[.cutout] = control }
-                else if suffix.contains("depth") { legacyControls[.depthMap] = control }
-                else if suffix.contains("preset") { legacyControls[.presetStudio] = control }
-                else if suffix.contains("camera") { legacyControls[.camera] = control }
-                else if suffix.contains("asset") { legacyControls[.assetLibrary] = control }
-            }
+                  !view.aemotionHasAncestor(identifier: "aemotion.shell.root") else { continue }
+            let identifier = (view.accessibilityIdentifier ?? "").lowercased()
+            let label = (view.accessibilityLabel ?? "").lowercased()
+            let title = ((control as? UIButton)?.title(for: .normal) ?? "").lowercased()
+            let value = [identifier, label, title].joined(separator: " ")
+
+            if value.contains("continue") { legacyControls[.continueEditing] = control }
+            if value.contains("new") && value.contains("project") { legacyControls[.newProject] = control }
+            if value.contains("import") { legacyControls[.importProject] = control }
+            if value.contains("tutorial") { legacyControls[.tutorials] = control }
+            if value.contains("template") { legacyControls[.templates] = control }
+            if value.contains("3d-studio") || value.contains("3d studio") { legacyControls[.threeDStudio] = control }
+            if value.contains("world-studio") || value.contains("world studio") { legacyControls[.worldStudio] = control }
+            if value.contains("pre-comp") || value.contains("precomp") { legacyControls[.precompose] = control }
+            if value.contains("track") { legacyControls[.tracking] = control }
+            if value.contains("matte") { legacyControls[.matte] = control }
+            if value.contains("depth") { legacyControls[.depthMap] = control }
+            if value.contains("text") && identifier.contains("tool") { legacyControls[.textTool] = control }
+            if value.contains("speed") { legacyControls[.speedRemap] = control }
+            if value.contains("cutout") { legacyControls[.cutout] = control }
+            if value.contains("preset") { legacyControls[.presetStudio] = control }
+            if value.contains("camera") { legacyControls[.camera] = control }
+            if value.contains("asset") { legacyControls[.assetLibrary] = control }
         }
     }
 
     private func hideKnownLegacyOverlays(in root: UIView) {
-        let rootArea = max(root.bounds.width * root.bounds.height, 1)
+        var branches = Set<ObjectIdentifier>()
+        var viewsToHide: [UIView] = []
+
         for view in root.aemotionAllDescendantsIncludingSelf() {
             guard view !== root,
-                  let identifier = view.accessibilityIdentifier,
-                  identifier.hasPrefix("aemotion.") else { continue }
-            let converted = view.convert(view.bounds, to: root)
-            let coverage = max(converted.width * converted.height, 0) / rootArea
-            let isKnownOverlay = identifier == "aemotion.launch.overlay"
-                || identifier == "aemotion.home.surface"
-                || identifier == "aemotion.shell.root"
-                || coverage >= 0.72
-            guard isKnownOverlay else { continue }
+                  !view.aemotionHasAncestor(identifier: "aemotion.shell.root") else { continue }
+            let identifier = view.accessibilityIdentifier ?? ""
+            let isLegacyHome = identifier.hasPrefix("aemotion.home.")
+            let isLaunchOverlay = identifier == "aemotion.launch.overlay"
+            guard isLegacyHome || isLaunchOverlay else { continue }
+            guard let topLevelBranch = view.aemotionTopLevelBranch(under: root) else { continue }
+            let key = ObjectIdentifier(topLevelBranch)
+            if branches.insert(key).inserted {
+                viewsToHide.append(topLevelBranch)
+            }
+        }
+
+        for view in viewsToHide {
             view.isHidden = true
             view.isUserInteractionEnabled = false
+            view.alpha = 0
         }
     }
 
     private func normalizeHostSurface(in root: UIView) {
         root.backgroundColor = AEMotionProductTheme.canvas
         for view in root.aemotionAllDescendantsIncludingSelf() {
+            guard !view.aemotionHasAncestor(identifier: "aemotion.shell.root") else { continue }
             switch view {
             case let table as UITableView:
                 table.backgroundColor = AEMotionProductTheme.canvas
@@ -183,14 +233,10 @@ final class AEMotionHostSurfaceAdapter {
                 }
             case let label as UILabel:
                 normalizeTextContrast(label)
-            case let textView as UITextView:
-                if textView.isEditable == false {
-                    textView.textColor = AEMotionProductTheme.primaryText
-                }
-            case let button as UIButton:
-                if button.configuration == nil {
-                    button.setTitleColor(AEMotionProductTheme.primaryText, for: .normal)
-                }
+            case let textView as UITextView where !textView.isEditable:
+                textView.textColor = AEMotionProductTheme.primaryText
+            case let button as UIButton where button.configuration == nil:
+                button.setTitleColor(AEMotionProductTheme.primaryText, for: .normal)
             default:
                 break
             }
@@ -198,6 +244,7 @@ final class AEMotionHostSurfaceAdapter {
     }
 
     private func normalizeTextContrast(_ label: UILabel) {
+        guard !label.isHidden, label.alpha > 0.01 else { return }
         if let attributed = label.attributedText, attributed.length > 0 {
             let mutable = NSMutableAttributedString(attributedString: attributed)
             mutable.addAttribute(
@@ -233,6 +280,23 @@ private extension UIView {
             index += 1
         }
         return result
+    }
+
+    func aemotionHasAncestor(identifier: String) -> Bool {
+        var candidate: UIView? = self
+        while let view = candidate {
+            if view.accessibilityIdentifier == identifier { return true }
+            candidate = view.superview
+        }
+        return false
+    }
+
+    func aemotionTopLevelBranch(under root: UIView) -> UIView? {
+        var candidate: UIView = self
+        while let parent = candidate.superview, parent !== root {
+            candidate = parent
+        }
+        return candidate.superview === root ? candidate : nil
     }
 }
 #endif
