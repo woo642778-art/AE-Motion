@@ -39,6 +39,7 @@ jobs:
           python3 scripts/test-ui272-framework-contract.py
           python3 scripts/test-ui272-device-regression-contract.py
           python3 scripts/test-ui272-build842-runtime-activation.py
+          python3 scripts/test-ui272-build843-global-shell.py
           python3 scripts/test-macho-load-command.py
           python3 scripts/test-known-2.7-fixes.py
           python3 scripts/test-package-ui272-ipa.py
@@ -64,7 +65,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AEMotionUI272-2.7.2-build842-log
+          name: AEMotionUI272-2.7.2-build843-log
           path: build-ios.log
           if-no-files-found: ignore
       - name: Fail on iOS build error
@@ -89,6 +90,6 @@ jobs:
             > artifacts/AEMotionUI272-framework.zip.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: AEMotionUI272-iOS-2.7.2-build842
+          name: AEMotionUI272-iOS-2.7.2-build843
           path: artifacts/*
           if-no-files-found: error
