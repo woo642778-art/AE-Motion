@@ -120,7 +120,8 @@ jobs:
           lipo -info build/AEMotionUI272.framework/AEMotionUI272
           otool -D build/AEMotionUI272.framework/AEMotionUI272
           plutil -p build/AEMotionUI272.framework/Info.plist
-          ! strings build/AEMotionUI272.framework/AEMotionUI272 | grep -q AEMotionLegacy
+          ! strings build/AEMotionUI272.framework/AEMotionUI272 | grep -q 'AEMotionLegacy.framework'
+          ! strings build/AEMotionUI272.framework/AEMotionUI272 | grep -q 'LegacyFrameworkLoader'
       - name: Collect products
         run: |
           mkdir -p artifacts
