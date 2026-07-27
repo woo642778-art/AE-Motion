@@ -6,7 +6,6 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 installer = (ROOT / "Sources/AEMotionUI271Host/AEMotionUI271Installer.swift").read_text(encoding="utf-8")
 coordinator = (ROOT / "Sources/AEMotionUI271Host/AEMotionGlobalShellCoordinator.swift").read_text(encoding="utf-8")
-shell = (ROOT / "Sources/AEMotionUI271Host/AEMotionShellViewController.swift").read_text(encoding="utf-8")
 release = (ROOT / "Sources/AEMotionExtensionsCore/AEMotionRelease.swift").read_text(encoding="utf-8")
 build = (ROOT / "scripts/build-ios-framework.sh").read_text(encoding="utf-8")
 packager_path = ROOT / "scripts/package-ui272-build845-ipa.py"
@@ -28,8 +27,8 @@ checks = {
     "Build 845 packager exists": (packager, r"BUILD_NUMBER\s*=\s*845", True),
     "Blatant dylib file removed": (packager, r"BLATANT_RELATIVE.*unlink\(", True),
     "Blatant load command removed": (packager, r"remove_load_dylib\(.*BLATANT_LOAD_PATH", True),
-    "output rejects Blatant token": (packager, r"legacy branding token remains|blatant token remains|Blatant", True),
-    "visible Build 845 marker": (shell, r"Build 845", True),
+    "output rejects Blatant token": (packager, r"legacy branding token remains|Blatant token remains", True),
+    "visible Build 845 marker": (packager, r"CFBundleDisplayName.*AE Motion 845", True),
     "Build 845 release identity": (
         release + "\n" + build,
         r"buildNumber\s*=\s*845.*CFBundleVersion\": \"845\"",
