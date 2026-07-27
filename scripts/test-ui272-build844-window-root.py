@@ -27,7 +27,8 @@ checks = {
     "promotion selector suppressed": (suppressor, r"showTitle:title:subTitle:duration:completeText:"),
     "promotion implementation replaced": (suppressor, r"method_setImplementation|class_replaceMethod"),
     "UI dylib inserted before legacy tweak": (macho + packager, r"insert_load_dylib_before\(.*AlightMotion\.dylib"),
-    "UTF16 branding patched": (packager, r"Cracked By Blatant.*encode\(\"utf-16le\"\).*AE Motion Official"),
+    "old UTF16 branding identified": (packager, r"Cracked By Blatant.*utf-16le"),
+    "replacement UTF16 branding identified": (packager, r"AE Motion Official.*utf-16le"),
     "output rejects legacy branding": (packager, r"legacy branding remains|legacy branding token remains"),
     "Build 844 identity": (release + build + packager, r"buildNumber\s*=\s*844.*CFBundleVersion\": \"844\".*BUILD_NUMBER\s*=\s*844"),
 }
