@@ -4,13 +4,14 @@ import UIKit
 @MainActor
 enum AEMotionLaunchOverlay {
     static let minimumVisibleDuration: TimeInterval = 1.4
-    private static let maximumVisibleDuration: TimeInterval = 6.0
+    static let maximumVisibleDuration: TimeInterval = 6.0
+
     private static let channelURL = URL(string: "https://t.me/aemotionios")!
-    private static let channelDismissedKey = "aemotion.build846.official-channel-dismissed"
+    private static let channelDismissedKey = "aemotion.build847.official-channel-dismissed"
 
     private static var hasStarted = false
-    private static var startedAt = Date()
-    private static var isShellReady = false
+    private static var didReachMinimumDuration = false
+    private static var didTransitionFromLoading = false
     private static var overlayWindow: UIWindow?
     private static var overlayController: AEMotionLaunchExperienceViewController?
     private static var observers: [NSObjectProtocol] = []
@@ -22,7 +23,6 @@ enum AEMotionLaunchOverlay {
             return
         }
         hasStarted = true
-        startedAt = Date()
 
         let center = NotificationCenter.default
         for name in [
@@ -39,22 +39,21 @@ enum AEMotionLaunchOverlay {
                 Task { @MainActor in schedulePresentationBurst() }
             })
         }
+
         schedulePresentationBurst()
 
+        DispatchQueue.main.asyncAfter(deadline: .now() + minimumVisibleDuration) {
+            didReachMinimumDuration = true
+            finishLoadingPhase()
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + maximumVisibleDuration) {
-            guard !isShellReady else { return }
             dismissOverlay(animated: true)
         }
     }
 
     static func markShellReady() {
-        isShellReady = true
-        presentIfPossible()
-        let elapsed = Date().timeIntervalSince(startedAt)
-        let delay = max(0, minimumVisibleDuration - elapsed)
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            finishLoadingPhase()
-        }
+        overlayController?.markWorkspaceReady()
     }
 
     private static func schedulePresentationBurst() {
@@ -72,63 +71,98 @@ enum AEMotionLaunchOverlay {
         guard overlayWindow == nil,
               let scene = UIApplication.shared.connectedScenes
                 .compactMap({ $0 as? UIWindowScene })
-                .first(where: { $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive })
+                .first(where: {
+                    $0.activationState == .foregroundActive
+                        || $0.activationState == .foregroundInactive
+                })
         else { return }
 
         let controller = AEMotionLaunchExperienceViewController()
         controller.onJoinChannel = {
             UIApplication.shared.open(channelURL, options: [:], completionHandler: nil)
         }
-        controller.onCloseChannel = {
+        controller.onContinue = {
             UserDefaults.standard.set(true, forKey: channelDismissedKey)
             dismissOverlay(animated: true)
         }
 
         let window = UIWindow(windowScene: scene)
-        window.windowLevel = UIWindow.Level.alert + 100
+        window.windowLevel = UIWindow.Level.alert + 200
         window.backgroundColor = UIColor(white: 0.02, alpha: 1)
         window.rootViewController = controller
         window.accessibilityIdentifier = "aemotion.launch.window"
         overlayController = controller
         overlayWindow = window
         window.makeKeyAndVisible()
+
+        if didReachMinimumDuration {
+            finishLoadingPhase()
+        }
     }
 
     private static func finishLoadingPhase() {
-        guard isShellReady else { return }
+        guard didReachMinimumDuration,
+              !didTransitionFromLoading,
+              let controller = overlayController else { return }
+        didTransitionFromLoading = true
+
         if UserDefaults.standard.bool(forKey: channelDismissedKey) {
             dismissOverlay(animated: true)
         } else {
-            overlayController?.showOfficialChannel()
+            controller.showOfficialChannel()
         }
     }
 
     private static func dismissOverlay(animated: Bool) {
         guard let window = overlayWindow else { return }
+        overlayController?.stopAnimation()
+
         let finish = {
             window.isHidden = true
             window.rootViewController = nil
             overlayController = nil
             overlayWindow = nil
+            restoreApplicationKeyWindow(excluding: window)
         }
+
         guard animated else {
             finish()
             return
         }
+
         UIView.animate(withDuration: 0.24, animations: {
             window.alpha = 0
         }, completion: { _ in finish() })
+    }
+
+    private static func restoreApplicationKeyWindow(excluding overlay: UIWindow) {
+        let candidate = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .filter {
+                $0 !== overlay
+                    && !$0.isHidden
+                    && $0.alpha > 0.01
+                    && $0.windowLevel == .normal
+            }
+            .max { left, right in
+                let leftArea = left.bounds.width * left.bounds.height
+                let rightArea = right.bounds.width * right.bounds.height
+                return leftArea < rightArea
+            }
+        candidate?.makeKey()
     }
 }
 
 @MainActor
 private final class AEMotionLaunchExperienceViewController: UIViewController {
     var onJoinChannel: (() -> Void)?
-    var onCloseChannel: (() -> Void)?
+    var onContinue: (() -> Void)?
 
     private let loadingStack = UIStackView()
     private let channelStack = UIStackView()
     private let progressView = UIProgressView(progressViewStyle: .default)
+    private let statusLabel = UILabel()
     private let ringLayer = CAShapeLayer()
     nonisolated(unsafe) private var progressTimer: Timer?
 
@@ -144,14 +178,32 @@ private final class AEMotionLaunchExperienceViewController: UIViewController {
         progressTimer?.invalidate()
     }
 
-    func showOfficialChannel() {
+    func markWorkspaceReady() {
+        statusLabel.text = "Workspace ready"
+        progressView.setProgress(max(progressView.progress, 0.96), animated: true)
+    }
+
+    func stopAnimation() {
         progressTimer?.invalidate()
+        progressTimer = nil
+        ringLayer.removeAllAnimations()
+    }
+
+    func showOfficialChannel() {
+        stopAnimation()
         channelStack.isHidden = false
         channelStack.alpha = 0
-        channelStack.transform = CGAffineTransform(translationX: 0, y: 18).scaledBy(x: 0.96, y: 0.96)
+        channelStack.transform = CGAffineTransform(
+            translationX: 0,
+            y: 18
+        ).scaledBy(x: 0.96, y: 0.96)
+
         UIView.animate(withDuration: 0.32, delay: 0, options: [.curveEaseOut]) {
             self.loadingStack.alpha = 0
-            self.loadingStack.transform = CGAffineTransform(translationX: 0, y: -16).scaledBy(x: 0.96, y: 0.96)
+            self.loadingStack.transform = CGAffineTransform(
+                translationX: 0,
+                y: -16
+            ).scaledBy(x: 0.96, y: 0.96)
             self.channelStack.alpha = 1
             self.channelStack.transform = .identity
         } completion: { _ in
@@ -175,8 +227,16 @@ private final class AEMotionLaunchExperienceViewController: UIViewController {
         ])
 
         let title = makeLabel("AE Motion", size: 34, weight: .bold, color: .white)
-        let subtitle = makeLabel("Preparing Motion Workspace", size: 17, weight: .semibold, color: UIColor(white: 0.68, alpha: 1))
-        let build = makeLabel("2.7.2 · Build 846", size: 13, weight: .medium, color: UIColor(white: 0.48, alpha: 1))
+        let subtitle = makeLabel(
+            "Preparing Motion Workspace",
+            size: 17,
+            weight: .semibold,
+            color: UIColor(white: 0.68, alpha: 1)
+        )
+        statusLabel.text = "Starting extensions"
+        statusLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        statusLabel.textColor = UIColor(white: 0.48, alpha: 1)
+        statusLabel.textAlignment = .center
 
         progressView.progressTintColor = UIColor(red: 0.46, green: 0.21, blue: 1, alpha: 1)
         progressView.trackTintColor = UIColor(white: 0.18, alpha: 1)
@@ -184,20 +244,40 @@ private final class AEMotionLaunchExperienceViewController: UIViewController {
         progressView.translatesAutoresizingMaskIntoConstraints = false
         progressView.widthAnchor.constraint(equalToConstant: 220).isActive = true
 
+        let build = makeLabel(
+            "2.7.2 · Build 847",
+            size: 12,
+            weight: .medium,
+            color: UIColor(white: 0.38, alpha: 1)
+        )
+
         loadingStack.axis = .vertical
         loadingStack.alignment = .center
         loadingStack.spacing = 14
         loadingStack.translatesAutoresizingMaskIntoConstraints = false
-        [logo, title, subtitle, progressView, build].forEach(loadingStack.addArrangedSubview)
+        [logo, title, subtitle, progressView, statusLabel, build]
+            .forEach(loadingStack.addArrangedSubview)
         view.addSubview(loadingStack)
         NSLayoutConstraint.activate([
             loadingStack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             loadingStack.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -14),
-            loadingStack.leadingAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 28),
-            loadingStack.trailingAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -28),
+            loadingStack.leadingAnchor.constraint(
+                greaterThanOrEqualTo: view.safeAreaLayoutGuide.leadingAnchor,
+                constant: 28
+            ),
+            loadingStack.trailingAnchor.constraint(
+                lessThanOrEqualTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -28
+            ),
         ])
 
-        let ringPath = UIBezierPath(arcCenter: CGPoint(x: 56, y: 56), radius: 51, startAngle: -.pi / 2, endAngle: .pi * 1.5, clockwise: true)
+        let ringPath = UIBezierPath(
+            arcCenter: CGPoint(x: 56, y: 56),
+            radius: 51,
+            startAngle: -.pi / 2,
+            endAngle: .pi * 1.5,
+            clockwise: true
+        )
         ringLayer.path = ringPath.cgPath
         ringLayer.strokeColor = UIColor.white.withAlphaComponent(0.28).cgColor
         ringLayer.fillColor = UIColor.clear.cgColor
@@ -208,7 +288,12 @@ private final class AEMotionLaunchExperienceViewController: UIViewController {
 
     private func configureChannelPhase() {
         let title = makeLabel("AE Motion iOS", size: 33, weight: .bold, color: .white)
-        let subtitle = makeLabel("Official Channel", size: 20, weight: .semibold, color: UIColor(red: 0.66, green: 0.49, blue: 1, alpha: 1))
+        let subtitle = makeLabel(
+            "Official Channel",
+            size: 20,
+            weight: .semibold,
+            color: UIColor(red: 0.66, green: 0.49, blue: 1, alpha: 1)
+        )
         let message = makeLabel(
             "Get release notes, update files, and support from the official AE Motion Telegram channel.",
             size: 16,
@@ -218,13 +303,23 @@ private final class AEMotionLaunchExperienceViewController: UIViewController {
         message.numberOfLines = 0
         message.textAlignment = .center
 
-        let join = makeButton(title: "Join AE Motion Telegram", color: UIColor(red: 0.13, green: 0.58, blue: 0.95, alpha: 1))
+        let join = makeButton(
+            title: "Join AE Motion Telegram",
+            color: UIColor(red: 0.13, green: 0.58, blue: 0.95, alpha: 1)
+        )
         join.accessibilityIdentifier = "aemotion.launch.join-telegram"
-        join.addAction(UIAction { [weak self] _ in self?.onJoinChannel?() }, for: .touchUpInside)
+        join.addAction(UIAction { [weak self] _ in
+            self?.onJoinChannel?()
+        }, for: .touchUpInside)
 
-        let close = makeButton(title: "Continue to AE Motion", color: UIColor(red: 0.45, green: 0.20, blue: 0.98, alpha: 1))
+        let close = makeButton(
+            title: "Continue to AE Motion",
+            color: UIColor(red: 0.45, green: 0.20, blue: 0.98, alpha: 1)
+        )
         close.accessibilityIdentifier = "aemotion.launch.continue"
-        close.addAction(UIAction { [weak self] _ in self?.onCloseChannel?() }, for: .touchUpInside)
+        close.addAction(UIAction { [weak self] _ in
+            self?.onContinue?()
+        }, for: .touchUpInside)
 
         channelStack.axis = .vertical
         channelStack.alignment = .fill
@@ -235,8 +330,14 @@ private final class AEMotionLaunchExperienceViewController: UIViewController {
         view.addSubview(channelStack)
         NSLayoutConstraint.activate([
             channelStack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            channelStack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 28),
-            channelStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -28),
+            channelStack.leadingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.leadingAnchor,
+                constant: 28
+            ),
+            channelStack.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -28
+            ),
             join.heightAnchor.constraint(equalToConstant: 58),
             close.heightAnchor.constraint(equalToConstant: 58),
         ])
@@ -250,15 +351,26 @@ private final class AEMotionLaunchExperienceViewController: UIViewController {
         rotation.repeatCount = .infinity
         ringLayer.add(rotation, forKey: "aemotion.launch.rotation")
 
-        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+        progressTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.08,
+            repeats: true
+        ) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                self.progressView.progress = min(0.92, self.progressView.progress + 0.018)
+                self.progressView.progress = min(
+                    0.92,
+                    self.progressView.progress + 0.018
+                )
             }
         }
     }
 
-    private func makeLabel(_ text: String, size: CGFloat, weight: UIFont.Weight, color: UIColor) -> UILabel {
+    private func makeLabel(
+        _ text: String,
+        size: CGFloat,
+        weight: UIFont.Weight,
+        color: UIColor
+    ) -> UILabel {
         let label = UILabel()
         label.text = text
         label.font = .systemFont(ofSize: size, weight: weight)
