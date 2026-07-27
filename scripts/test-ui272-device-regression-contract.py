@@ -11,10 +11,8 @@ home = (ROOT / "Sources/AEMotionUI271Host/AEMotionHomeViewController.swift").rea
 shell = (ROOT / "Sources/AEMotionUI271Host/AEMotionShellViewController.swift").read_text(encoding="utf-8")
 release = (ROOT / "Sources/AEMotionExtensionsCore/AEMotionRelease.swift").read_text(encoding="utf-8")
 build = (ROOT / "scripts/build-ios-framework.sh").read_text(encoding="utf-8")
-coordinator_path = ROOT / "Sources/AEMotionUI271Host/AEMotionProjectActionCoordinator.swift"
-studio_path = ROOT / "Sources/AEMotionUI271Host/AEMotionStudioRouter.swift"
-actions = coordinator_path.read_text(encoding="utf-8") if coordinator_path.exists() else ""
-studio = studio_path.read_text(encoding="utf-8") if studio_path.exists() else ""
+actions = (ROOT / "Sources/AEMotionUI271Host/AEMotionProjectActionCoordinator.swift").read_text(encoding="utf-8")
+studio = (ROOT / "Sources/AEMotionUI271Host/AEMotionStudioRouter.swift").read_text(encoding="utf-8")
 
 checks = {
     "global installer": (installer, r"AEMotionGlobalShellCoordinator\.start\(\)"),
@@ -40,11 +38,11 @@ checks = {
     "quick tool matte": (home, r"Matte"),
     "quick tool depth": (home, r"Depth"),
     "quick tool text": (home, r"Text"),
-    "build 848 release": (release + build, r"buildNumber\s*=\s*848.*CFBundleVersion\": \"848\""),
+    "build 849 release": (release + build, r"buildNumber\s*=\s*849.*CFBundleVersion\": \"849\""),
 }
 
 failed = [name for name, (text, pattern) in checks.items() if re.search(pattern, text, re.S | re.I) is None]
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
-print("PASS: Build 848 device regression contract")
+print("PASS: Build 849 device regression contract")
