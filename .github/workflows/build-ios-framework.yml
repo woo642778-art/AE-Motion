@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - fix/home-shell-ui-restoration
+      - fix/2.7.2-recovery
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -25,20 +26,26 @@ jobs:
         run: python3 scripts/test-category-collection-proxy-isolation.py
       - name: Verify category proxy index-path forwarding
         run: python3 scripts/test-category-proxy-indexpath-forwarding.py
-      - name: Verify AE Motion 2.7.1 source contracts
+      - name: Verify Home Shell source contracts
         run: |
           set -euo pipefail
           for test in scripts/test-ui271-*-contract.py; do
             python3 "$test"
           done
-      - name: Parse AE Motion 2.7.1 UIKit sources
+      - name: Verify 2.7.2 integration contracts
+        run: |
+          set -euo pipefail
+          python3 scripts/test-ui272-no-legacy-loader-contract.py
+          python3 scripts/test-ui272-framework-contract.py
+          python3 scripts/test-macho-load-command.py
+          python3 scripts/test-known-2.7-fixes.py
+          python3 scripts/test-package-ui272-ipa.py
+      - name: Parse AE Motion UIKit sources
         run: |
           set -euo pipefail
           for source in Sources/AEMotionUI271Host/*.swift; do
             swiftc -frontend -parse "$source"
           done
-      - name: Verify AE Motion 2.7.1 packaging
-        run: python3 scripts/test-package-ui271-ipa.py
 
   build-ios:
     needs: validate
@@ -55,7 +62,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AEMotionExtensionsHost-2.7.1-build-log
+          name: AEMotionUI272-2.7.2-build840-log
           path: build-ios.log
           if-no-files-found: ignore
       - name: Fail on iOS build error
@@ -65,20 +72,21 @@ jobs:
           exit 1
       - name: Inspect framework
         run: |
-          file build/AEMotionExtensionsHost.framework/AEMotionExtensionsHost
-          lipo -info build/AEMotionExtensionsHost.framework/AEMotionExtensionsHost
-          otool -D build/AEMotionExtensionsHost.framework/AEMotionExtensionsHost
-          plutil -p build/AEMotionExtensionsHost.framework/Info.plist
+          file build/AEMotionUI272.framework/AEMotionUI272
+          lipo -info build/AEMotionUI272.framework/AEMotionUI272
+          otool -D build/AEMotionUI272.framework/AEMotionUI272
+          plutil -p build/AEMotionUI272.framework/Info.plist
+          ! strings build/AEMotionUI272.framework/AEMotionUI272 | grep -q AEMotionLegacy
       - name: Collect products
         run: |
           mkdir -p artifacts
           ditto -c -k --sequesterRsrc --keepParent \
-            build/AEMotionExtensionsHost.framework \
-            artifacts/AEMotionExtensionsHost-framework.zip
-          shasum -a 256 artifacts/AEMotionExtensionsHost-framework.zip \
-            > artifacts/AEMotionExtensionsHost-framework.zip.sha256
+            build/AEMotionUI272.framework \
+            artifacts/AEMotionUI272-framework.zip
+          shasum -a 256 artifacts/AEMotionUI272-framework.zip \
+            > artifacts/AEMotionUI272-framework.zip.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: AEMotionExtensionsHost-iOS-2.7.1-build839
+          name: AEMotionUI272-iOS-2.7.2-build840
           path: artifacts/*
           if-no-files-found: error
