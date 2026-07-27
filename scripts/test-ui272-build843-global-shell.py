@@ -11,7 +11,11 @@ tutorial_path = ROOT / "Sources/AEMotionUI271Host/AEMotionTutorialViewController
 coordinator = coordinator_path.read_text(encoding="utf-8") if coordinator_path.exists() else ""
 tutorial = tutorial_path.read_text(encoding="utf-8") if tutorial_path.exists() else ""
 macho = (ROOT / "scripts/macho_load_command.py").read_text(encoding="utf-8")
-packager = (ROOT / "scripts/package-ui272-ipa.py").read_text(encoding="utf-8")
+packager = (
+    (ROOT / "scripts/package-ui272-ipa.py").read_text(encoding="utf-8")
+    + "\n"
+    + (ROOT / "scripts/package-ui272-build843-ipa.py").read_text(encoding="utf-8")
+)
 release = (ROOT / "Sources/AEMotionExtensionsCore/AEMotionRelease.swift").read_text(encoding="utf-8")
 build = (ROOT / "scripts/build-ios-framework.sh").read_text(encoding="utf-8")
 
@@ -25,8 +29,8 @@ checks = {
     "custom tutorial controller": (shell + tutorial, r"AEMotionTutorialViewController.*Learning Studio"),
     "custom home and tutorial ownership": (shell, r"shouldShowHome.*shouldShowTutorial"),
     "Mach-O dylib removal primitive": (macho, r"def remove_load_dylib\("),
-    "Blatant load command removed": (packager, r"remove_load_dylib\(.*blatantsPatch\.dylib"),
-    "Blatant file deleted": (packager, r"blatantsPatch\.dylib.*unlink\("),
+    "Blatant load command removed": (packager, r"remove_load_dylib\(.*BLATANT_LOAD_PATH"),
+    "Blatant file deleted": (packager, r"BLATANT_RELATIVE.*unlink\("),
     "Build 843 identity": (release + build + packager, r"buildNumber\s*=\s*843.*CFBundleVersion\": \"843\".*BUILD_NUMBER\s*=\s*843"),
 }
 
