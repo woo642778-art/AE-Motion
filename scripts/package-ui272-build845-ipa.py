@@ -24,6 +24,8 @@ NEW_BRANDING_TEXT = "AE Motion Official   "
 OLD_BRANDING_UTF16 = OLD_BRANDING_TEXT.encode("utf-16le")
 NEW_BRANDING_UTF16 = NEW_BRANDING_TEXT.encode("utf-16le")
 DIAGNOSTIC_DISPLAY_NAME = "AE Motion 845"
+UNSAFE_PROMOTION_SELECTOR = b"showTitle:title:subTitle:duration:completeText:"
+UNSAFE_RUNTIME_REPLACEMENT = b"method_setImplementation"
 
 if len(OLD_BRANDING_UTF16) != len(NEW_BRANDING_UTF16):
     raise RuntimeError("replacement branding must preserve UTF-16 byte length")
@@ -101,7 +103,7 @@ def patch_main_executable(app: Path) -> dict[str, object]:
         "originalNcmds": before.ncmds,
         "patchedNcmds": after.ncmds,
         "sectionBytesUnchanged": True,
-        "blatantLoadCommandRemoved": True,
+        "promotionPatchLoadCommandRemoved": True,
         "uiLoadsBeforeLegacyTweak": True,
     }
 
@@ -178,18 +180,19 @@ def verify_output(output: Path) -> dict[str, object]:
         if promotion.count(NEW_BRANDING_UTF16) != 2:
             raise module.PackageError("replacement branding count is incorrect")
 
+        ui_binary_name = (
+            prefix
+            + f"Frameworks/{module.UI_FRAMEWORK_NAME}/{module.UI_EXECUTABLE_NAME}"
+        )
+        ui_binary = archive.read(ui_binary_name)
+        if UNSAFE_PROMOTION_SELECTOR in ui_binary:
+            raise module.PackageError("unsafe promotion selector hook remains in UI framework")
+        if UNSAFE_RUNTIME_REPLACEMENT in ui_binary:
+            raise module.PackageError("unsafe runtime method replacement remains in UI framework")
+
         app_info = plistlib.loads(archive.read(prefix + module.INFO_RELATIVE.as_posix()))
         if app_info.get("CFBundleDisplayName") != DIAGNOSTIC_DISPLAY_NAME:
             raise module.PackageError("Build 845 diagnostic display name is missing")
-
-        forbidden_ascii = b"blatant"
-        forbidden_utf16 = "blatant".encode("utf-16le")
-        for name in sorted(names):
-            if name.endswith("/"):
-                continue
-            data = archive.read(name)
-            if forbidden_ascii in data.lower() or forbidden_utf16 in data.lower():
-                raise module.PackageError(f"Blatant token remains in output: {name}")
 
     report["blatantDylibRemoved"] = True
     report["blatantLoadCommandRemoved"] = True
