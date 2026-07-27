@@ -33,7 +33,11 @@ checks = {
     "Blatant dylib file removed": (packager, r"BLATANT_RELATIVE.*unlink\(", True),
     "Blatant load command removed": (packager, r"remove_load_dylib\(.*BLATANT_LOAD_PATH", True),
     "output rejects Blatant token": (packager, r"legacy branding token remains|Blatant token remains", True),
-    "visible Build 845 marker": (packager, r"CFBundleDisplayName.*AE Motion 845", True),
+    "visible Build 845 marker": (
+        packager,
+        r"DIAGNOSTIC_DISPLAY_NAME\s*=\s*\"AE Motion 845\".*CFBundleDisplayName",
+        True,
+    ),
     "Build 845 release identity": (
         release + "\n" + build,
         r"buildNumber\s*=\s*845.*CFBundleVersion\": \"845\"",
