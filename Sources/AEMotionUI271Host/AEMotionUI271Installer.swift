@@ -1,18 +1,15 @@
 import Foundation
 
-@_cdecl("AEMotionUI271Install")
-public func AEMotionUI271Install() {
+@_cdecl("AEMotionUI272Install")
+public func AEMotionUI272Install() {
 #if canImport(UIKit)
-    guard LegacyFrameworkLoader.loadLegacyFramework() else { return }
     DispatchQueue.main.async {
-        AEMotionUI271Installer.installRuntimeHooks()
+        AEMotionUI272Installer.installRuntimeHooks()
     }
-#else
-    _ = LegacyFrameworkLoader.loadLegacyFramework()
 #endif
 }
 
-enum AEMotionUI271Installer {
+enum AEMotionUI272Installer {
     @MainActor
     static func installRuntimeHooks() {
 #if canImport(UIKit)
