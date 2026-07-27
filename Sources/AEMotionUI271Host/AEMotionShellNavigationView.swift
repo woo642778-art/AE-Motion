@@ -43,7 +43,10 @@ final class AEMotionShellNavigationView: UIView {
         capsuleCenterConstraint = capsule.centerXAnchor.constraint(equalTo: target.centerXAnchor)
         capsuleCenterConstraint?.isActive = true
 
-        let changes = { [weak self] in self?.layoutIfNeeded() }
+        let changes: () -> Void = { [weak self] in
+            guard let self else { return }
+            self.layoutIfNeeded()
+        }
         if animated {
             _ = AEMotionMotionSystem.spring(duration: 0.48, dampingRatio: 0.78, animations: changes)
         } else {
