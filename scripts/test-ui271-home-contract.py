@@ -24,7 +24,7 @@ checks = {
     "root tabs": (nav, r'HomeShellTab\.allCases'),
     "create tray": (shell, r'New Project.*Import.*Camera.*Asset Library'),
     "non-root hide": (shell, r'isRootNavigationVisible'),
-    "reuse controllers": (shell, r'rootControllers'),
+    "reuse controllers": (shell, r'private let homeController.*private let tutorialController'),
 }
 
 failed = [name for name, (content, pattern) in checks.items() if re.search(pattern, content, re.S) is None]
