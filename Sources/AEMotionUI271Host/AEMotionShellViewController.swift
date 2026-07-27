@@ -10,11 +10,14 @@ final class AEMotionShellViewController: UIViewController {
     var actionHandler: ((AEMotionHomeAction) -> Void)?
 
     private(set) var state = HomeShellState()
+    private let headerView = AEMotionShellHeaderView()
     private let contentContainer = UIView()
+    private let bottomChromeView = UIView()
     private let navigationView = AEMotionShellNavigationView()
     private let createTray = UIStackView()
     private let passthroughView = AEMotionShellPassthroughView()
     private let homeController = AEMotionHomeViewController()
+    private let tutorialController = AEMotionTutorialViewController()
     private var navigationBottomConstraint: NSLayoutConstraint?
     private var currentHost: UIViewController?
     private var showsHomeContent = true
@@ -23,6 +26,7 @@ final class AEMotionShellViewController: UIViewController {
     private init() {
         super.init(nibName: nil, bundle: nil)
         rootControllers[.home] = homeController
+        rootControllers[.tutorials] = tutorialController
         homeController.actionHandler = { [weak self] action in self?.handleHomeAction(action) }
     }
 
@@ -35,9 +39,17 @@ final class AEMotionShellViewController: UIViewController {
         view.backgroundColor = .clear
         view.accessibilityIdentifier = "aemotion.shell.root"
 
+        headerView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(headerView)
+
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
         contentContainer.backgroundColor = AEMotionProductTheme.canvas
         view.addSubview(contentContainer)
+
+        bottomChromeView.translatesAutoresizingMaskIntoConstraints = false
+        bottomChromeView.backgroundColor = AEMotionProductTheme.canvas
+        bottomChromeView.isUserInteractionEnabled = true
+        view.addSubview(bottomChromeView)
 
         navigationView.onSelect = { [weak self] tab in self?.handleTabSelection(tab) }
         view.addSubview(navigationView)
@@ -50,10 +62,21 @@ final class AEMotionShellViewController: UIViewController {
             constant: -6
         )
         NSLayoutConstraint.activate([
+            headerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            headerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            headerView.topAnchor.constraint(equalTo: view.topAnchor),
+            headerView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 72),
+
             contentContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             contentContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            contentContainer.topAnchor.constraint(equalTo: view.topAnchor),
+            contentContainer.topAnchor.constraint(equalTo: headerView.bottomAnchor),
             contentContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            bottomChromeView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            bottomChromeView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bottomChromeView.topAnchor.constraint(equalTo: navigationView.topAnchor, constant: -18),
+            bottomChromeView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
             navigationView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
             navigationView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
             navigationBottomConstraint!,
@@ -61,7 +84,7 @@ final class AEMotionShellViewController: UIViewController {
             createTray.bottomAnchor.constraint(equalTo: navigationView.topAnchor, constant: -10),
             createTray.widthAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.widthAnchor, constant: -28),
         ])
-        installHomeControllerIfNeeded()
+        installCustomControllersIfNeeded()
         updateAppearance(animated: false)
     }
 
@@ -108,18 +131,23 @@ final class AEMotionShellViewController: UIViewController {
         currentHost = nil
     }
 
-    private func installHomeControllerIfNeeded() {
-        guard homeController.parent !== self else { return }
-        addChild(homeController)
-        homeController.view.translatesAutoresizingMaskIntoConstraints = false
-        contentContainer.addSubview(homeController.view)
+    private func installCustomControllersIfNeeded() {
+        install(controller: homeController)
+        install(controller: tutorialController)
+    }
+
+    private func install(controller: UIViewController) {
+        guard controller.parent !== self else { return }
+        addChild(controller)
+        controller.view.translatesAutoresizingMaskIntoConstraints = false
+        contentContainer.addSubview(controller.view)
         NSLayoutConstraint.activate([
-            homeController.view.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
-            homeController.view.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
-            homeController.view.topAnchor.constraint(equalTo: contentContainer.topAnchor),
-            homeController.view.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
+            controller.view.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+            controller.view.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+            controller.view.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+            controller.view.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
         ])
-        homeController.didMove(toParent: self)
+        controller.didMove(toParent: self)
     }
 
     private func configureCreateTray() {
@@ -225,14 +253,25 @@ final class AEMotionShellViewController: UIViewController {
         guard isViewLoaded else { return }
         let shouldShowNavigation = state.isRootNavigationVisible
         let shouldShowHome = showsHomeContent && state.selectedTab == .home && state.destination == .root
-        passthroughView.passthroughOutsideNavigation = !shouldShowHome
-        contentContainer.isHidden = !shouldShowHome
-        contentContainer.isUserInteractionEnabled = shouldShowHome
+        let shouldShowTutorial = state.selectedTab == .tutorials && state.destination == .root
+        let shouldShowCustomContent = shouldShowHome || shouldShowTutorial
+
+        passthroughView.passthroughOutsideNavigation = !shouldShowCustomContent
+        contentContainer.isHidden = !shouldShowCustomContent
+        contentContainer.isUserInteractionEnabled = shouldShowCustomContent
+        homeController.view.isHidden = !shouldShowHome
+        tutorialController.view.isHidden = !shouldShowTutorial
+        headerView.update(tab: state.selectedTab)
         navigationView.setSelectedTab(state.selectedTab, animated: animated)
+
+        headerView.isHidden = !shouldShowNavigation
+        bottomChromeView.isHidden = !shouldShowNavigation
         if shouldShowNavigation { navigationView.isHidden = false }
 
         let changes = { [weak self] in
             guard let self else { return }
+            self.headerView.alpha = shouldShowNavigation ? 1 : 0
+            self.bottomChromeView.alpha = shouldShowNavigation ? 1 : 0
             self.navigationView.alpha = shouldShowNavigation ? 1 : 0
             self.navigationView.transform = shouldShowNavigation
                 ? .identity
@@ -246,6 +285,70 @@ final class AEMotionShellViewController: UIViewController {
         navigationView.isUserInteractionEnabled = shouldShowNavigation
         navigationView.isHidden = !shouldShowNavigation && !animated
         if !shouldShowNavigation { setCreateTrayExpanded(false) }
+    }
+}
+
+@MainActor
+private final class AEMotionShellHeaderView: UIView {
+    private let subtitleLabel = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        accessibilityIdentifier = "aemotion.shell.header"
+        backgroundColor = AEMotionProductTheme.canvas
+        layer.borderColor = AEMotionProductTheme.separator.cgColor
+        layer.borderWidth = 1 / UIScreen.main.scale
+
+        let mark = UILabel()
+        mark.text = "Ae"
+        mark.font = .systemFont(ofSize: 19, weight: .bold)
+        mark.textColor = .white
+        mark.textAlignment = .center
+        mark.backgroundColor = AEMotionProductTheme.accentPurple
+        mark.layer.cornerRadius = 12
+        mark.layer.cornerCurve = .continuous
+        mark.clipsToBounds = true
+        mark.translatesAutoresizingMaskIntoConstraints = false
+
+        let title = UILabel()
+        title.text = "AE Motion"
+        title.font = .systemFont(ofSize: 24, weight: .bold)
+        title.textColor = AEMotionProductTheme.primaryText
+
+        subtitleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        subtitleLabel.textColor = AEMotionProductTheme.secondaryText
+
+        let labels = UIStackView(arrangedSubviews: [title, subtitleLabel])
+        labels.axis = .vertical
+        labels.spacing = 1
+
+        let row = UIStackView(arrangedSubviews: [mark, labels, UIView()])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 12
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+
+        NSLayoutConstraint.activate([
+            mark.widthAnchor.constraint(equalToConstant: 46),
+            mark.heightAnchor.constraint(equalToConstant: 46),
+            row.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            row.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12),
+        ])
+        update(tab: .home)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func update(tab: HomeShellTab) {
+        switch tab {
+        case .home: subtitleLabel.text = "Workspace"
+        case .tutorials: subtitleLabel.text = "Learning Studio"
+        case .projects: subtitleLabel.text = "Projects"
+        case .templates: subtitleLabel.text = "Templates"
+        case .create: subtitleLabel.text = "Create"
+        }
     }
 }
 
