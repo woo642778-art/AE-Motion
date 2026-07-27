@@ -101,6 +101,43 @@ enum AEMotionGlobalShellCoordinator {
         return candidate.hostRoot.presentedViewController == nil
             && !candidate.hostRoot.isBeingPresented
             && !candidate.hostRoot.isBeingDismissed
+            && !hasBlockingLaunchOverlay(
+                in: candidate.window,
+                hostRoot: candidate.hostRoot
+            )
+    }
+
+    private static func hasBlockingLaunchOverlay(
+        in window: UIWindow,
+        hostRoot: UIViewController
+    ) -> Bool {
+        guard hostRoot.isViewLoaded else { return false }
+        let rootView = hostRoot.view!
+        let windowArea = max(1, window.bounds.width * window.bounds.height)
+
+        func containsBlockingOverlay(_ view: UIView) -> Bool {
+            if view === rootView || view.isDescendant(of: rootView) {
+                return false
+            }
+            if rootView.isDescendant(of: view) {
+                return view.subviews.contains(where: containsBlockingOverlay)
+            }
+            guard !view.isHidden,
+                  view.alpha > 0.01,
+                  view.isUserInteractionEnabled else { return false }
+
+            let visibleFrame = view.convert(view.bounds, to: window).intersection(window.bounds)
+            let coverage: CGFloat
+            if visibleFrame.isNull || visibleFrame.isEmpty {
+                coverage = 0
+            } else {
+                coverage = (visibleFrame.width * visibleFrame.height) / windowArea
+            }
+            if coverage >= 0.55 { return true }
+            return view.subviews.contains(where: containsBlockingOverlay)
+        }
+
+        return window.subviews.contains(where: containsBlockingOverlay)
     }
 
     private static func preferredCandidate() -> WindowCandidate? {
