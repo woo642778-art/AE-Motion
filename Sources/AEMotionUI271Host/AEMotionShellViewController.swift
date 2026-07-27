@@ -8,6 +8,8 @@ final class AEMotionShellViewController: UIViewController {
 
     var routeHandler: ((HomeShellTab) -> Void)?
     var actionHandler: ((AEMotionHomeAction) -> Void)?
+    var settingsHandler: (() -> Void)?
+    var profileHandler: (() -> Void)?
 
     private(set) var state = HomeShellState()
     private let headerView = AEMotionShellHeaderView()
@@ -41,6 +43,8 @@ final class AEMotionShellViewController: UIViewController {
         view.accessibilityIdentifier = "aemotion.shell.root"
 
         headerView.translatesAutoresizingMaskIntoConstraints = false
+        headerView.onSettings = { [weak self] in self?.settingsHandler?() }
+        headerView.onProfile = { [weak self] in self?.profileHandler?() }
         view.addSubview(headerView)
 
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -332,6 +336,9 @@ final class AEMotionShellViewController: UIViewController {
 
 @MainActor
 private final class AEMotionShellHeaderView: UIView {
+    var onSettings: (() -> Void)?
+    var onProfile: (() -> Void)?
+
     private let subtitleLabel = UILabel()
 
     override init(frame: CGRect) {
@@ -364,18 +371,38 @@ private final class AEMotionShellHeaderView: UIView {
         labels.axis = .vertical
         labels.spacing = 1
 
-        let row = UIStackView(arrangedSubviews: [mark, labels, UIView()])
+        let settings = makeHeaderButton(
+            symbol: "gearshape.fill",
+            label: "Settings",
+            identifier: "aemotion.shell.settings"
+        )
+        settings.addAction(UIAction { [weak self] _ in self?.onSettings?() }, for: .touchUpInside)
+
+        let profile = makeHeaderButton(
+            symbol: "person.crop.circle.fill",
+            label: "Profile",
+            identifier: "aemotion.shell.profile"
+        )
+        profile.addAction(UIAction { [weak self] _ in self?.onProfile?() }, for: .touchUpInside)
+
+        let spacer = UIView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let row = UIStackView(arrangedSubviews: [mark, labels, spacer, settings, profile])
         row.axis = .horizontal
         row.alignment = .center
-        row.spacing = 12
+        row.spacing = 10
         row.translatesAutoresizingMaskIntoConstraints = false
         addSubview(row)
 
         NSLayoutConstraint.activate([
             mark.widthAnchor.constraint(equalToConstant: 46),
             mark.heightAnchor.constraint(equalToConstant: 46),
-            row.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
-            row.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            settings.widthAnchor.constraint(equalToConstant: 44),
+            settings.heightAnchor.constraint(equalToConstant: 44),
+            profile.widthAnchor.constraint(equalToConstant: 44),
+            profile.heightAnchor.constraint(equalToConstant: 44),
+            row.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 18),
+            row.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -14),
             row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -13),
         ])
         update(tab: .home)
@@ -386,13 +413,30 @@ private final class AEMotionShellHeaderView: UIView {
     }
 
     func update(tab: HomeShellTab) {
+        let section: String
         switch tab {
-        case .home: subtitleLabel.text = "Workspace"
-        case .tutorials: subtitleLabel.text = "Learning Studio"
-        case .projects: subtitleLabel.text = "Projects"
-        case .templates: subtitleLabel.text = "Templates"
-        case .create: subtitleLabel.text = "Create"
+        case .home: section = "Workspace"
+        case .tutorials: section = "Learning Studio"
+        case .projects: section = "Projects"
+        case .templates: section = "Templates"
+        case .create: section = "Create"
         }
+        subtitleLabel.text = "\(section) · Build 846"
+    }
+
+    private func makeHeaderButton(symbol: String, label: String, identifier: String) -> UIButton {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        var configuration = UIButton.Configuration.plain()
+        configuration.image = UIImage(systemName: symbol)
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 21, weight: .semibold)
+        configuration.baseForegroundColor = AEMotionProductTheme.primaryText
+        configuration.background.backgroundColor = AEMotionProductTheme.elevatedSurface
+        configuration.background.cornerRadius = 14
+        button.configuration = configuration
+        button.accessibilityLabel = label
+        button.accessibilityIdentifier = identifier
+        return button
     }
 }
 
