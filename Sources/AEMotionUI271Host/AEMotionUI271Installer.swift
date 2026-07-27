@@ -19,14 +19,10 @@ enum AEMotionUI272Installer {
 
     @MainActor
     static func start() {
-        guard !hasStarted else {
-            AEMotionLaunchBrandingSanitizer.install()
-            AEMotionGlobalShellCoordinator.start()
-            return
-        }
-        hasStarted = true
+        AEMotionLaunchOverlay.install()
         AEMotionLaunchBrandingSanitizer.install()
         AEMotionGlobalShellCoordinator.start()
+        hasStarted = true
     }
 #else
     static func start() {}
