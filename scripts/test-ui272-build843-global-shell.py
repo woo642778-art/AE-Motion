@@ -22,7 +22,7 @@ checks = {
     "AE Motion top header": (shell, r"AEMotionShellHeaderView.*AE Motion"),
     "custom tutorial controller": (shell + tutorial, r"AEMotionTutorialViewController.*Learning Studio"),
     "custom home and tutorial ownership": (shell, r"shouldShowHome.*shouldShowTutorial"),
-    "Build 844 identity": (release + build, r"buildNumber\s*=\s*844.*CFBundleVersion\": \"844\""),
+    "Build 845 identity": (release + build, r"buildNumber\s*=\s*845.*CFBundleVersion\": \"845\""),
 }
 
 failed = [name for name, (text, pattern) in checks.items() if re.search(pattern, text, re.S) is None]
