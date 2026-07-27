@@ -12,8 +12,9 @@ packager = packager_path.read_text(encoding="utf-8") if packager_path.exists() e
 
 checks = {
     "minimum timer transitions without shell gate": (launch, r"asyncAfter\(deadline: \.now\(\) \+ minimumVisibleDuration\).*finishLoadingPhase\(\)"),
-    "loading transition not gated by shell": (launch, r"finishLoadingPhase\(\).*guard didReachMinimumDuration.*!didTransitionFromLoading"),
+    "loading transition not gated by shell": (launch, r"private static func finishLoadingPhase\(\).*didReachMinimumDuration.*!didTransitionFromLoading"),
     "hard maximum dismissal": (launch, r"maximumVisibleDuration.*dismissOverlay\(animated: true\)"),
+    "one-shot dismissal": (launch, r"isFinished\s*=\s*true.*presentationGeneration\s*\+=\s*1"),
     "key window restoration": (launch, r"restoreApplicationKeyWindow.*makeKey\(\)"),
     "Build 847 launch marker": (launch, r"Build 847"),
     "Build 847 release": (release + build, r"buildNumber\s*=\s*847.*CFBundleVersion\": \"847\""),
