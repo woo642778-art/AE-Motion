@@ -18,9 +18,13 @@ studio = studio_path.read_text(encoding="utf-8") if studio_path.exists() else ""
 
 checks = {
     "global installer": (installer, r"AEMotionGlobalShellCoordinator\.start\(\)"),
+    "launch overlay": (installer, r"AEMotionLaunchOverlay\.install\(\)"),
     "bounded global refresh": (coordinator, r"scheduleRefreshBurst.*0\.10"),
     "root tab discovery": (coordinator, r"findTabController"),
+    "dynamic project tab": (coordinator, r"controllerMarkers.*projectslistvc.*index\(for"),
     "native tab bar replacement": (coordinator, r"tabBar\.isHidden\s*=\s*true"),
+    "settings restoration": (coordinator + shell, r"SettingsNC.*gearshape"),
+    "profile restoration": (coordinator + shell, r"MyAccountVC.*person\.crop\.circle"),
     "top and bottom chrome ownership": (shell, r"AEMotionShellHeaderView.*bottomChromeView"),
     "bounded root refresh": (adapter, r"scheduleRefresh.*remaining"),
     "non-home legacy branch cleanup": (adapter, r"hasPrefix\(\"aemotion\.home\.\"\).*aemotionTopLevelBranch"),
@@ -35,11 +39,11 @@ checks = {
     "quick tool matte": (home, r"Matte"),
     "quick tool depth": (home, r"Depth"),
     "quick tool text": (home, r"Text"),
-    "build 845 release": (release + build, r"buildNumber\s*=\s*845.*CFBundleVersion\": \"845\""),
+    "build 846 release": (release + build, r"buildNumber\s*=\s*846.*CFBundleVersion\": \"846\""),
 }
 
-failed = [name for name, (text, pattern) in checks.items() if re.search(pattern, text, re.S) is None]
+failed = [name for name, (text, pattern) in checks.items() if re.search(pattern, text, re.S | re.I) is None]
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
-print("PASS: Build 845 device regression contract")
+print("PASS: Build 846 device regression contract")
