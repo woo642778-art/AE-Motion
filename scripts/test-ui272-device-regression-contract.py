@@ -39,11 +39,11 @@ checks = {
     "quick tool matte": (home, r"Matte"),
     "quick tool depth": (home, r"Depth"),
     "quick tool text": (home, r"Text"),
-    "build 846 release": (release + build, r"buildNumber\s*=\s*846.*CFBundleVersion\": \"846\""),
+    "build 847 release": (release + build, r"buildNumber\s*=\s*847.*CFBundleVersion\": \"847\""),
 }
 
 failed = [name for name, (text, pattern) in checks.items() if re.search(pattern, text, re.S | re.I) is None]
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
-print("PASS: Build 846 device regression contract")
+print("PASS: Build 847 device regression contract")
