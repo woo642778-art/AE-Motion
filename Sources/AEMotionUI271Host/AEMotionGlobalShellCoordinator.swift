@@ -53,7 +53,7 @@ enum AEMotionGlobalShellCoordinator {
     }
 
     private static func refreshVisibleShell() {
-        guard let candidate = preferredCandidate() else { return }
+        guard let candidate = preferredCandidate(), isSafeToWrap(candidate) else { return }
         let container = ensureRootContainer(
             for: candidate.window,
             hostRoot: candidate.hostRoot
@@ -92,6 +92,15 @@ enum AEMotionGlobalShellCoordinator {
             }
         }
         container.showShell(tab: tab, showsHomeContent: tab == .home)
+    }
+
+    private static func isSafeToWrap(_ candidate: WindowCandidate) -> Bool {
+        if candidate.window.rootViewController is AEMotionRootContainerViewController {
+            return true
+        }
+        return candidate.hostRoot.presentedViewController == nil
+            && !candidate.hostRoot.isBeingPresented
+            && !candidate.hostRoot.isBeingDismissed
     }
 
     private static func preferredCandidate() -> WindowCandidate? {
