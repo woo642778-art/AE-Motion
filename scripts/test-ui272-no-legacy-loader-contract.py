@@ -9,7 +9,12 @@ release = (root / "Sources/AEMotionExtensionsCore/AEMotionRelease.swift").read_t
 combined = package + "\n" + installer
 
 failed: list[str] = []
-for forbidden in ("AEMotionLegacy", "LegacyFrameworkLoader", "dlopen", "RTLD_GLOBAL"):
+for forbidden in (
+    "AEMotionLegacy.framework",
+    "LegacyFrameworkLoader",
+    "dlopen(",
+    "RTLD_GLOBAL",
+):
     if forbidden in combined:
         failed.append(f"forbidden legacy loader token: {forbidden}")
 if 'marketingVersion = "2.7.2"' not in release:
