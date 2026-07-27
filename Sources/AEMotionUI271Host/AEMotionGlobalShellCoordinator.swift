@@ -1,5 +1,6 @@
 #if canImport(UIKit)
 import UIKit
+import AEMotionExtensionsCore
 
 @MainActor
 enum AEMotionGlobalShellCoordinator {
@@ -49,8 +50,7 @@ enum AEMotionGlobalShellCoordinator {
               let root = window.rootViewController,
               let tabController = findTabController(from: root) else { return }
 
-        let selectedController = tabController.selectedViewController
-        let leaf = selectedController.map(visibleLeaf(from:))
+        let leaf = tabController.selectedViewController.map { visibleLeaf(from: $0) }
 
         if let leaf, shouldDetachShell(for: leaf, in: tabController) {
             AEMotionShellViewController.shared.detachFromCurrentHost()
@@ -154,15 +154,16 @@ enum AEMotionGlobalShellCoordinator {
     ) -> Bool {
         let name = String(describing: type(of: leaf)).lowercased()
         let nonRootMarkers = [
-            "projecteditvc", "threeDworkspaceviewcontroller".lowercased(),
+            "projecteditvc", "threedworkspaceviewcontroller",
             "worldworkspaceviewcontroller", "studioscene", "editorviewcontroller",
             "templatepreview", "export", "render"
         ]
-        if nonRootMarkers.contains(where: name.contains) { return true }
+        if nonRootMarkers.contains(where: { name.contains($0) }) { return true }
 
         if let navigation = tabController.selectedViewController as? UINavigationController,
-           navigation.viewControllers.count > 1 {
-            let rootName = String(describing: type(of: navigation.viewControllers.first!)).lowercased()
+           navigation.viewControllers.count > 1,
+           let first = navigation.viewControllers.first {
+            let rootName = String(describing: type(of: first)).lowercased()
             if name != rootName { return true }
         }
         return false
