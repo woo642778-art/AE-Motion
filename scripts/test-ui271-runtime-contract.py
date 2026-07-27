@@ -4,29 +4,28 @@ import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-resolver = (ROOT / "Sources/AEMotionUI271Host/AEMotionRuntimeResolver.swift").read_text(encoding="utf-8")
+coordinator = (ROOT / "Sources/AEMotionUI271Host/AEMotionGlobalShellCoordinator.swift").read_text(encoding="utf-8")
 adapter = (ROOT / "Sources/AEMotionUI271Host/AEMotionHostSurfaceAdapter.swift").read_text(encoding="utf-8")
-coordinator = (ROOT / "Sources/AEMotionUI271Host/AEMotionProjectActionCoordinator.swift").read_text(encoding="utf-8")
+coordinator_actions = (ROOT / "Sources/AEMotionUI271Host/AEMotionProjectActionCoordinator.swift").read_text(encoding="utf-8")
 installer = (ROOT / "Sources/AEMotionUI271Host/AEMotionUI271Installer.swift").read_text(encoding="utf-8")
+shell = (ROOT / "Sources/AEMotionUI271Host/AEMotionShellViewController.swift").read_text(encoding="utf-8")
 
 checks = {
-    "home allowlist": (resolver, r'AlightMotion\.HomeVC.*AlightMotion\.HomeViewVC'),
-    "projects allowlist": (resolver, r'AlightMotion\.ProjectsVC.*AlightMotion\.ProjectsListVC'),
-    "templates allowlist": (resolver, r'AlightMotion\.TemplatesListVC.*AlightMotion\.TemplatesShowcaseVC'),
-    "associated ownership": (resolver, r'objc_(get|set)AssociatedObject'),
-    "exact runtime lookup": (resolver, r'NSClassFromString'),
-    "persistent class hook ownership": (resolver, r'private\s+static\s+var\s+installedClasses'),
-    "legacy action forwarding": (coordinator, r'sendActions\(for:\s*\.touchUpInside\)'),
+    "global root installer": (installer, r'AEMotionGlobalShellCoordinator\.start'),
+    "window root ownership": (coordinator, r'window\.rootViewController'),
+    "tab controller discovery": (coordinator, r'findTabController'),
+    "native tab hidden": (coordinator, r'tabBar\.isHidden\s*=\s*true'),
+    "legacy action forwarding": (coordinator_actions, r'sendActions\(for:\s*\.touchUpInside\)'),
     "known identifier capture": (adapter, r'aemotion\.home\.'),
     "owned overlay cleanup": (adapter, r'hasPrefix\("aemotion\.home\."\)'),
     "contrast normalization": (adapter, r'normalizeTextContrast'),
-    "shell root attach": (resolver, r'shell\.attach\(to:'),
-    "nonroot hide": (resolver, r'openNonRoot'),
-    "direct 2.7.2 installer": (installer, r'@_cdecl\("AEMotionUI272Install"\).*AEMotionRuntimeResolver\.install'),
+    "shell root attach": (coordinator, r'shell\.attach\(to:'),
+    "nonroot detach": (coordinator, r'detachFromCurrentHost'),
+    "AE Motion header": (shell, r'AEMotionShellHeaderView.*AE Motion'),
 }
 
 failed = [name for name, (content, pattern) in checks.items() if re.search(pattern, content, re.S) is None]
-if "objc_getClassList" in resolver:
+if "objc_getClassList" in coordinator:
     failed.append("broad runtime class enumeration")
 if "UITableViewDataSource" in adapter or "UICollectionViewDataSource" in adapter:
     failed.append("host data-source replacement")
@@ -36,4 +35,4 @@ for forbidden in ("LegacyFrameworkLoader", "AEMotionLegacy", "dlopen"):
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
-print("PASS: UI 2.7.2 runtime contract")
+print("PASS: UI 2.7.2 global runtime contract")
