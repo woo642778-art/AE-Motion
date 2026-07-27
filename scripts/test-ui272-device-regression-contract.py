@@ -5,7 +5,6 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 installer = (ROOT / "Sources/AEMotionUI271Host/AEMotionUI271Installer.swift").read_text(encoding="utf-8")
-resolver = (ROOT / "Sources/AEMotionUI271Host/AEMotionRuntimeResolver.swift").read_text(encoding="utf-8")
 adapter = (ROOT / "Sources/AEMotionUI271Host/AEMotionHostSurfaceAdapter.swift").read_text(encoding="utf-8")
 home = (ROOT / "Sources/AEMotionUI271Host/AEMotionHomeViewController.swift").read_text(encoding="utf-8")
 release = (ROOT / "Sources/AEMotionExtensionsCore/AEMotionRelease.swift").read_text(encoding="utf-8")
@@ -17,9 +16,10 @@ studio = studio_path.read_text(encoding="utf-8") if studio_path.exists() else ""
 
 checks = {
     "bounded late installer retry": (installer, r"didFinishLaunchingNotification.*didBecomeActiveNotification.*asyncAfter"),
-    "idempotent runtime hooks": (resolver, r"installedClasses"),
-    "layout refresh hook": (resolver, r"viewDidLayoutSubviews"),
-    "non-home legacy branch cleanup": (adapter, r"hasPrefix\(\"aemotion\.home\.\"\).*topLevelBranch"),
+    "waits for all host classes": (installer, r"hostClassesAreReady\(\).*hasInstalled"),
+    "one-time successful install": (installer, r"guard !hasInstalled.*AEMotionRuntimeResolver\.install\(\).*hasInstalled = true"),
+    "bounded root refresh": (adapter, r"scheduleRefresh.*remaining"),
+    "non-home legacy branch cleanup": (adapter, r"hasPrefix\(\"aemotion\.home\.\"\).*aemotionTopLevelBranch"),
     "native tab bar replacement": (adapter, r"tabBar\.isHidden\s*=\s*true"),
     "project editor detection": (coordinator, r"ProjectEditVC"),
     "continue before tool": (coordinator, r"continueEditing.*waitForEditor"),
