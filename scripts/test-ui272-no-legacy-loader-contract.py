@@ -19,8 +19,8 @@ for forbidden in (
         failed.append(f"forbidden legacy loader token: {forbidden}")
 if 'marketingVersion = "2.7.2"' not in release:
     failed.append("release version is not 2.7.2")
-if "buildNumber = 844" not in release:
-    failed.append("release build is not 844")
+if "buildNumber = 845" not in release:
+    failed.append("release build is not 845")
 if 'AEMotionUI272Install' not in installer:
     failed.append("2.7.2 installer symbol is missing")
 
