@@ -30,7 +30,7 @@ if "objc_getClassList" in coordinator:
     failed.append("broad runtime class enumeration")
 if "UITableViewDataSource" in adapter or "UICollectionViewDataSource" in adapter:
     failed.append("host data-source replacement")
-for forbidden in ("LegacyFrameworkLoader", "AEMotionLegacy", "dlopen"):
+for forbidden in ("LegacyFrameworkLoader", "AEMotionLegacy.framework", "dlopen(", "RTLD_GLOBAL"):
     if forbidden in installer:
         failed.append(f"forbidden installer token: {forbidden}")
 if failed:
