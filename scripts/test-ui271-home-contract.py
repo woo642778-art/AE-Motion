@@ -28,12 +28,12 @@ checks = {
     "create actions": (tray, r"New Project.*Import.*Camera.*Asset Library"),
     "outside tap control": (tray, r"dismiss-region.*onDismiss"),
     "dynamic build metadata": (shell, r"AEMotionRelease\.buildNumber"),
-    "Build 851 release": (release, r"buildNumber\s*=\s*851"),
+    "Build 852 release": (release, r"buildNumber\s*=\s*852"),
 }
 
 failed = [name for name, (content, pattern) in checks.items() if re.search(pattern, content, re.S) is None]
 combined = nav + home + shell + content + tray
-for stale in ("Build 846", "Build 848", "Build 849", "Build 850"):
+for stale in ("Build 846", "Build 848", "Build 849", "Build 850", "Build 851"):
     if stale in combined:
         failed.append(f"stale literal: {stale}")
 if re.search(r"fakeProject|placeholderProject|sampleProject", combined, re.I):
@@ -41,4 +41,4 @@ if re.search(r"fakeProject|placeholderProject|sampleProject", combined, re.I):
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
-print("PASS: Build 851 home shell contract")
+print("PASS: Build 852 home shell contract")
