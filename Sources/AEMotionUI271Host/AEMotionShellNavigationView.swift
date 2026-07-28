@@ -7,7 +7,7 @@ final class AEMotionShellNavigationView: UIView {
     var onSelectTab: ((AEMotionRootTab) -> Void)?
     var onToggleCreate: (() -> Void)?
 
-    private enum Item: Hashable {
+    fileprivate enum Item: Hashable {
         case tab(AEMotionRootTab)
         case create
     }
