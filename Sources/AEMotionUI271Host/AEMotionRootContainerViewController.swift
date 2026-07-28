@@ -18,6 +18,7 @@ final class AEMotionRootContainerViewController: UIViewController {
     )
     private var adapters: [AEMotionRootTab: AEMotionHostSurfaceAdapter] = [:]
     private var backgroundObserver: NSObjectProtocol?
+    private var didRequestOfficialChannel = false
 
     init(
         hostController: UIViewController,
@@ -52,6 +53,11 @@ final class AEMotionRootContainerViewController: UIViewController {
         hostTabController.tabBar.isHidden = true
         hostTabController.tabBar.isUserInteractionEnabled = false
         applyRoute(animated: false)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        presentOfficialChannelIfNeeded()
     }
 
     override var childForStatusBarStyle: UIViewController? {
@@ -251,6 +257,37 @@ final class AEMotionRootContainerViewController: UIViewController {
         )
     }
 
+    private func presentOfficialChannelIfNeeded() {
+        guard !didRequestOfficialChannel,
+              routeState.modal == nil,
+              routeState.nonRoot == nil,
+              !routeState.isCreateTrayPresented,
+              presentedViewController == nil else { return }
+
+        didRequestOfficialChannel = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self,
+                  self.presentedViewController == nil,
+                  self.routeState.modal == nil,
+                  self.routeState.nonRoot == nil else { return }
+
+            AEMotionLaunchOverlay.presentIfNeeded(
+                from: self,
+                completion: { [weak self] didPresent in
+                    guard let self, didPresent else { return }
+                    AEMotionRouteReducer.reduce(
+                        state: &routeState,
+                        event: .presentModal(.officialChannel)
+                    )
+                    applyRoute(animated: false)
+                },
+                onDismiss: { [weak self] in
+                    self?.modalDidDismiss()
+                }
+            )
+        }
+    }
+
     private func modalDidDismiss() {
         AEMotionRouteReducer.reduce(
             state: &routeState,
@@ -264,12 +301,13 @@ final class AEMotionRootContainerViewController: UIViewController {
         hostTabController.tabBar.isUserInteractionEnabled = false
         selectHostTab(routeState.selectedTab)
 
-        let hostContentActive = routeState.nonRoot == nil
-            && (routeState.selectedTab == .projects
-                || routeState.selectedTab == .templates)
+        let usesHostRootContent = routeState.selectedTab == .projects
+            || routeState.selectedTab == .templates
+        let hostContentActive = routeState.nonRoot != nil
+            || (routeState.nonRoot == nil && usesHostRootContent)
         hostController.view.isUserInteractionEnabled = hostContentActive
 
-        if hostContentActive {
+        if routeState.nonRoot == nil && usesHostRootContent {
             prepareHostSurface(for: routeState.selectedTab)
         }
 
