@@ -155,7 +155,7 @@ enum AEMotionGlobalShellCoordinator {
               !candidate.hostRoot.isBeingPresented,
               !candidate.hostRoot.isBeingDismissed,
               (candidate.tabController.viewControllers?.count ?? 0) >= 4,
-              !containsVisibleActivityIndicator(in: candidate.window),
+              !containsBlockingLaunchIndicator(in: candidate.window),
               !containsLaunchNamedController(from: candidate.hostRoot) else {
             return false
         }
@@ -229,14 +229,52 @@ enum AEMotionGlobalShellCoordinator {
         return false
     }
 
-    private static func containsVisibleActivityIndicator(in view: UIView) -> Bool {
-        guard !view.isHidden, view.alpha > 0.01 else { return false }
-        if let indicator = view as? UIActivityIndicatorView,
-           indicator.isAnimating,
-           indicator.window != nil {
-            return true
+    private static func containsBlockingLaunchIndicator(in window: UIWindow) -> Bool {
+        let windowArea = max(1, window.bounds.width * window.bounds.height)
+        for indicator in allActivityIndicators(in: window) {
+            guard indicator.isAnimating,
+                  !indicator.isHidden,
+                  indicator.alpha > 0.01,
+                  indicator.window === window else { continue }
+
+            var ancestor = indicator.superview
+            var encounteredScrollableContent = false
+            while let view = ancestor, view !== window {
+                if view is UICollectionView
+                    || view is UITableView
+                    || view is UICollectionViewCell
+                    || view is UITableViewCell {
+                    encounteredScrollableContent = true
+                    break
+                }
+
+                let frame = view.convert(view.bounds, to: window).intersection(window.bounds)
+                if !frame.isNull, !frame.isEmpty {
+                    let coverage = (frame.width * frame.height) / windowArea
+                    if coverage >= 0.55 {
+                        return true
+                    }
+                }
+                ancestor = view.superview
+            }
+            if encounteredScrollableContent {
+                continue
+            }
         }
-        return view.subviews.contains(where: containsVisibleActivityIndicator)
+        return false
+    }
+
+    private static func allActivityIndicators(in root: UIView) -> [UIActivityIndicatorView] {
+        var result: [UIActivityIndicatorView] = []
+        var queue: [UIView] = [root]
+        while let view = queue.first {
+            queue.removeFirst()
+            if let indicator = view as? UIActivityIndicatorView {
+                result.append(indicator)
+            }
+            queue.append(contentsOf: view.subviews)
+        }
+        return result
     }
 
     private static func containsLaunchNamedController(
