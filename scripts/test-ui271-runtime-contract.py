@@ -25,7 +25,7 @@ checks = {
 }
 
 failed = [name for name, (content, pattern) in checks.items() if re.search(pattern, content, re.S) is None]
-if "window.rootViewController =" in coordinator:
+if re.search(r"window\.rootViewController\s*=\s*(?!=)", coordinator):
     failed.append("host root replacement")
 if "objc_getClassList" in coordinator:
     failed.append("broad runtime class enumeration")
