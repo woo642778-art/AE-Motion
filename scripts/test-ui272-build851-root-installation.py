@@ -10,7 +10,7 @@ combined = coordinator + "\n" + container
 
 required = {
     "single root replacement": r"window\.rootViewController\s*=\s*container",
-    "idempotent installation": r"installation\s*!=\s*nil|installedContainer\s*!=\s*nil",
+    "idempotent installation": r"guard\s+installedContainer\s*==\s*nil\s+else\s*\{\s*return\s*\}",
     "bounded attempts": r"maximumInstallationAttempts\s*=\s*(?:[1-9]|[12][0-9]|3[0-2])",
     "observer cleanup": r"removeObserver|observers\.removeAll",
     "host child containment": r"addChild\(hostController\).*hostController\.didMove\(toParent:\s*self\)",
