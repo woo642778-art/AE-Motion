@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import ast
 import re
 import sys
 
@@ -29,6 +30,23 @@ failed = [
     for name, (text, pattern) in checks.items()
     if re.search(pattern, text, re.S | re.I) is None
 ]
+
+parsed = ast.parse(packager)
+replacements = None
+for node in parsed.body:
+    if isinstance(node, ast.Assign):
+        if any(isinstance(target, ast.Name) and target.id == "BYTE_SAFE_BRANDING_REPLACEMENTS" for target in node.targets):
+            replacements = ast.literal_eval(node.value)
+            break
+if not replacements:
+    failed.append("byte-safe replacement table")
+else:
+    for old_text, new_text in replacements:
+        if len(old_text.encode("utf-8")) != len(new_text.encode("utf-8")):
+            failed.append(f"UTF-8 replacement length: {old_text}")
+        if len(old_text.encode("utf-16le")) != len(new_text.encode("utf-16le")):
+            failed.append(f"UTF-16 replacement length: {old_text}")
+
 forbidden = {
     "initializer patch": r"INITIALIZER_LOCAL_OFFSET|PROMOTION_INITIALIZER|RETURN_INSTRUCTION",
     "legacy loader": r"AEMotionLegacy|LegacyFrameworkLoader",
