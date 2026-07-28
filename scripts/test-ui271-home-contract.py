@@ -7,33 +7,38 @@ ROOT = Path(__file__).resolve().parents[1]
 nav = (ROOT / "Sources/AEMotionUI271Host/AEMotionShellNavigationView.swift").read_text(encoding="utf-8")
 home = (ROOT / "Sources/AEMotionUI271Host/AEMotionHomeViewController.swift").read_text(encoding="utf-8")
 shell = (ROOT / "Sources/AEMotionUI271Host/AEMotionShellViewController.swift").read_text(encoding="utf-8")
+content = (ROOT / "Sources/AEMotionUI271Host/AEMotionShellContentController.swift").read_text(encoding="utf-8")
+tray = (ROOT / "Sources/AEMotionUI271Host/AEMotionCreateTrayController.swift").read_text(encoding="utf-8")
+route = (ROOT / "Sources/AEMotionExtensionsCore/AEMotionRouteState.swift").read_text(encoding="utf-8")
+release = (ROOT / "Sources/AEMotionExtensionsCore/AEMotionRelease.swift").read_text(encoding="utf-8")
 
 checks = {
-    "single shell owner": (shell, r'final class AEMotionShellViewController'),
-    "navigation owned by shell": (shell, r'AEMotionShellNavigationView'),
-    "workspace": (home, r'Workspace'),
-    "continue editing": (home, r'Continue editing'),
-    "new project": (home, r'New [Pp]roject'),
-    "import": (home, r'Import'),
-    "tutorials": (home, r'Tutorials'),
-    "templates": (home, r'Templates'),
-    "3d studio": (home, r'3D Studio'),
-    "world studio": (home, r'Real-Time World Studio'),
-    "quick tools": (home, r'Quick tools'),
-    "home identifiers": (home, r'aemotion\.home\.'),
-    "root tabs": (nav, r'HomeShellTab\.allCases'),
-    "create tray": (shell, r'New Project.*Import.*Camera.*Asset Library'),
-    "non-root hide": (shell, r'isRootNavigationVisible'),
-    "reuse controllers": (shell, r'private let homeController.*private let tutorialController'),
+    "single shell owner": (shell, r"final class AEMotionShellViewController"),
+    "typed root navigation": (nav, r"AEMotionRootTab"),
+    "route state": (route, r"struct AEMotionRouteState"),
+    "create toggle event": (route, r"toggleCreateTray"),
+    "outside dismiss event": (route, r"dismissCreateTray"),
+    "source home controller": (content, r"AEMotionHomeViewController"),
+    "source tutorial controller": (content, r"AEMotionTutorialViewController"),
+    "workspace": (home, r"Workspace"),
+    "continue editing": (home, r"Continue editing"),
+    "3d studio": (home, r"3D Studio"),
+    "world studio": (home, r"Real-Time World Studio"),
+    "quick tools": (home, r"Quick tools"),
+    "create actions": (tray, r"New Project.*Import.*Camera.*Asset Library"),
+    "outside tap control": (tray, r"dismiss-region.*onDismiss"),
+    "dynamic build metadata": (shell, r"AEMotionRelease\.buildNumber"),
+    "Build 851 release": (release, r"buildNumber\s*=\s*851"),
 }
 
 failed = [name for name, (content, pattern) in checks.items() if re.search(pattern, content, re.S) is None]
-if "AEMotionShellNavigationView" in home:
-    failed.append("home content owns global navigation")
-combined = home + nav + shell
-if re.search(r'fakeProject|placeholderProject|sampleProject', combined, re.I):
+combined = nav + home + shell + content + tray
+for stale in ("Build 846", "Build 848", "Build 849", "Build 850"):
+    if stale in combined:
+        failed.append(f"stale literal: {stale}")
+if re.search(r"fakeProject|placeholderProject|sampleProject", combined, re.I):
     failed.append("fake project data")
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
-print("PASS: UI 2.7.2 home shell contract")
+print("PASS: Build 851 home shell contract")
