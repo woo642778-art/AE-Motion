@@ -29,7 +29,7 @@ BYTE_SAFE_BRANDING_REPLACEMENTS = (
     ("Cracked By", "AE Motion "),
     ("Blatant", "AE Core"),
     ("My Telegram", "AE Telegram"),
-    ("t.me/blatants", "t.me/aemotion_"),
+    ("t.me/blatants", "t.me/aemotion"),
 )
 FORBIDDEN_BRANDING = (
     b"Blatant",
