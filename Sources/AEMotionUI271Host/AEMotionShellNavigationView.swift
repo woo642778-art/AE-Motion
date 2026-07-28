@@ -4,21 +4,29 @@ import AEMotionExtensionsCore
 
 @MainActor
 final class AEMotionShellNavigationView: UIView {
-    var onSelect: ((HomeShellTab) -> Void)?
+    var onSelectTab: ((AEMotionRootTab) -> Void)?
+    var onToggleCreate: (() -> Void)?
+
+    private enum Item: Hashable {
+        case tab(AEMotionRootTab)
+        case create
+    }
 
     private let backgroundView: UIView
-    private let capsule = UIView()
+    private let selectionCapsule = UIView()
     private let stack = UIStackView()
-    private var buttons: [HomeShellTab: AEMotionShellTabButton] = [:]
+    private var buttons: [Item: AEMotionShellTabButton] = [:]
     private var capsuleCenterConstraint: NSLayoutConstraint?
-    private(set) var selectedTab: HomeShellTab = .home
+    private(set) var selectedTab: AEMotionRootTab = .home
 
     override init(frame: CGRect) {
         if UIAccessibility.isReduceTransparencyEnabled {
             backgroundView = UIView()
             backgroundView.backgroundColor = AEMotionProductTheme.floatingSurface
         } else {
-            backgroundView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
+            backgroundView = UIVisualEffectView(
+                effect: UIBlurEffect(style: .systemUltraThinMaterialDark)
+            )
         }
         super.init(frame: frame)
         configure()
@@ -29,38 +37,57 @@ final class AEMotionShellNavigationView: UIView {
             backgroundView = UIView()
             backgroundView.backgroundColor = AEMotionProductTheme.floatingSurface
         } else {
-            backgroundView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
+            backgroundView = UIVisualEffectView(
+                effect: UIBlurEffect(style: .systemUltraThinMaterialDark)
+            )
         }
         super.init(coder: coder)
         configure()
     }
 
-    func setSelectedTab(_ tab: HomeShellTab, animated: Bool) {
-        guard tab != .create, let target = buttons[tab] else { return }
+    func setSelectedTab(_ tab: AEMotionRootTab, animated: Bool) {
+        guard let target = buttons[.tab(tab)] else { return }
         selectedTab = tab
-        buttons.forEach { key, button in button.setSelected(key == tab) }
+        buttons.forEach { item, button in
+            if case .tab(let itemTab) = item {
+                button.setSelected(itemTab == tab)
+            } else {
+                button.setSelected(false)
+            }
+        }
+
         capsuleCenterConstraint?.isActive = false
-        capsuleCenterConstraint = capsule.centerXAnchor.constraint(equalTo: target.centerXAnchor)
+        capsuleCenterConstraint = selectionCapsule.centerXAnchor.constraint(
+            equalTo: target.centerXAnchor
+        )
         capsuleCenterConstraint?.isActive = true
 
-        let changes: () -> Void = { [weak self] in
-            guard let self else { return }
-            self.layoutIfNeeded()
-        }
-        if animated {
-            _ = AEMotionMotionSystem.spring(duration: 0.48, dampingRatio: 0.78, animations: changes)
+        let changes = { self.layoutIfNeeded() }
+        if animated && !UIAccessibility.isReduceMotionEnabled {
+            UIView.animate(
+                withDuration: 0.30,
+                delay: 0,
+                usingSpringWithDamping: 0.82,
+                initialSpringVelocity: 0.3,
+                options: [.allowUserInteraction, .beginFromCurrentState],
+                animations: changes
+            )
         } else {
             changes()
         }
+    }
+
+    func setCreatePresented(_ presented: Bool) {
+        buttons[.create]?.setCreatePresented(presented)
     }
 
     private func configure() {
         translatesAutoresizingMaskIntoConstraints = false
         accessibilityIdentifier = "aemotion.shell.navigation"
         layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.34
-        layer.shadowRadius = 24
-        layer.shadowOffset = CGSize(width: 0, height: 12)
+        layer.shadowOpacity = 0.32
+        layer.shadowRadius = 22
+        layer.shadowOffset = CGSize(width: 0, height: 10)
 
         backgroundView.translatesAutoresizingMaskIntoConstraints = false
         backgroundView.layer.cornerRadius = 27
@@ -70,11 +97,11 @@ final class AEMotionShellNavigationView: UIView {
         backgroundView.clipsToBounds = true
         addSubview(backgroundView)
 
-        capsule.translatesAutoresizingMaskIntoConstraints = false
-        capsule.backgroundColor = AEMotionProductTheme.accentPurple.withAlphaComponent(0.25)
-        capsule.layer.cornerRadius = 20
-        capsule.layer.cornerCurve = .continuous
-        backgroundView.addSubview(capsule)
+        selectionCapsule.translatesAutoresizingMaskIntoConstraints = false
+        selectionCapsule.backgroundColor = AEMotionProductTheme.accentPurple.withAlphaComponent(0.24)
+        selectionCapsule.layer.cornerRadius = 20
+        selectionCapsule.layer.cornerCurve = .continuous
+        backgroundView.addSubview(selectionCapsule)
 
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .horizontal
@@ -82,10 +109,23 @@ final class AEMotionShellNavigationView: UIView {
         stack.distribution = .fillEqually
         backgroundView.addSubview(stack)
 
-        for tab in HomeShellTab.allCases {
-            let button = AEMotionShellTabButton(tab: tab)
-            button.addAction(UIAction { [weak self] _ in self?.onSelect?(tab) }, for: .touchUpInside)
-            buttons[tab] = button
+        let orderedItems: [Item] = [
+            .tab(.home),
+            .tab(.tutorials),
+            .create,
+            .tab(.projects),
+            .tab(.templates),
+        ]
+        for item in orderedItems {
+            let button = AEMotionShellTabButton(item: item)
+            button.addAction(UIAction { [weak self] _ in
+                guard let self else { return }
+                switch item {
+                case .tab(let tab): self.onSelectTab?(tab)
+                case .create: self.onToggleCreate?()
+                }
+            }, for: .touchUpInside)
+            buttons[item] = button
             stack.addArrangedSubview(button)
         }
 
@@ -99,13 +139,15 @@ final class AEMotionShellNavigationView: UIView {
             stack.trailingAnchor.constraint(equalTo: backgroundView.trailingAnchor, constant: -7),
             stack.topAnchor.constraint(equalTo: backgroundView.topAnchor, constant: 4),
             stack.bottomAnchor.constraint(equalTo: backgroundView.bottomAnchor, constant: -4),
-            capsule.widthAnchor.constraint(equalToConstant: 58),
-            capsule.heightAnchor.constraint(equalToConstant: 40),
-            capsule.centerYAnchor.constraint(equalTo: backgroundView.centerYAnchor),
+            selectionCapsule.widthAnchor.constraint(equalToConstant: 58),
+            selectionCapsule.heightAnchor.constraint(equalToConstant: 40),
+            selectionCapsule.centerYAnchor.constraint(equalTo: backgroundView.centerYAnchor),
         ])
 
-        if let home = buttons[.home] {
-            capsuleCenterConstraint = capsule.centerXAnchor.constraint(equalTo: home.centerXAnchor)
+        if let home = buttons[.tab(.home)] {
+            capsuleCenterConstraint = selectionCapsule.centerXAnchor.constraint(
+                equalTo: home.centerXAnchor
+            )
             capsuleCenterConstraint?.isActive = true
         }
         setSelectedTab(.home, animated: false)
@@ -114,81 +156,111 @@ final class AEMotionShellNavigationView: UIView {
 
 @MainActor
 private final class AEMotionShellTabButton: UIButton {
-    let tab: HomeShellTab
-    private let titleText: String
+    private let item: AEMotionShellNavigationView.Item
 
-    init(tab: HomeShellTab) {
-        self.tab = tab
-        switch tab {
-        case .home: titleText = "Home"
-        case .tutorials: titleText = "Tutorials"
-        case .create: titleText = "Create"
-        case .projects: titleText = "Projects"
-        case .templates: titleText = "Templates"
-        }
+    init(item: AEMotionShellNavigationView.Item) {
+        self.item = item
         super.init(frame: .zero)
         configure()
     }
 
     required init?(coder: NSCoder) {
-        tab = .home
-        titleText = "Home"
+        item = .tab(.home)
         super.init(coder: coder)
         configure()
     }
 
     func setSelected(_ selected: Bool) {
         isSelected = selected
-        tintColor = selected ? AEMotionProductTheme.primaryText : AEMotionProductTheme.tertiaryText
+        guard item != .create else { return }
+        tintColor = selected
+            ? AEMotionProductTheme.primaryText
+            : AEMotionProductTheme.tertiaryText
         accessibilityTraits = selected ? [.button, .selected] : .button
+    }
+
+    func setCreatePresented(_ presented: Bool) {
+        guard item == .create else { return }
+        accessibilityTraits = presented ? [.button, .selected] : .button
+        layer.shadowOpacity = presented ? 0.65 : 0.38
+        transform = presented ? CGAffineTransform(scaleX: 0.94, y: 0.94) : .identity
     }
 
     private func configure() {
         translatesAutoresizingMaskIntoConstraints = false
-        accessibilityIdentifier = "aemotion.shell.tab.\(tab.rawValue)"
-        accessibilityLabel = titleText
-        accessibilityHint = tab == .create ? "Shows project creation options" : "Opens \(titleText)"
+        let title = displayTitle
+        accessibilityIdentifier = "aemotion.shell.tab.\(identifierComponent)"
+        accessibilityLabel = title
+        accessibilityHint = item == .create
+            ? "Shows or hides project creation options"
+            : "Opens \(title)"
 
         var configuration = UIButton.Configuration.plain()
         configuration.image = UIImage(systemName: iconName)?.applyingSymbolConfiguration(
             AEMotionProductTheme.makeIconConfiguration(
-                pointSize: tab == .create ? 22 : 18,
-                weight: tab == .create ? .bold : .semibold
+                pointSize: item == .create ? 22 : 18,
+                weight: item == .create ? .bold : .semibold
             )
         )
         configuration.imagePlacement = .top
         configuration.imagePadding = 2
-        configuration.title = tab == .create ? nil : titleText
+        configuration.title = item == .create ? nil : title
         configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
             var outgoing = incoming
             outgoing.font = UIFont.systemFont(ofSize: 9.5, weight: .semibold)
             return outgoing
         }
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 3, leading: 1, bottom: 3, trailing: 1)
+        configuration.contentInsets = NSDirectionalEdgeInsets(
+            top: 3,
+            leading: 1,
+            bottom: 3,
+            trailing: 1
+        )
         self.configuration = configuration
         tintColor = AEMotionProductTheme.tertiaryText
 
-        if tab == .create {
+        if item == .create {
             backgroundColor = AEMotionProductTheme.accentPurple
             layer.cornerRadius = 22
             layer.cornerCurve = .continuous
             layer.shadowColor = AEMotionProductTheme.accentPurple.cgColor
-            layer.shadowOpacity = 0.42
+            layer.shadowOpacity = 0.38
             layer.shadowRadius = 12
             layer.shadowOffset = CGSize(width: 0, height: 5)
-            widthAnchor.constraint(greaterThanOrEqualToConstant: AEMotionProductTheme.minimumTouchTarget).isActive = true
-            heightAnchor.constraint(equalToConstant: AEMotionProductTheme.minimumTouchTarget).isActive = true
+            widthAnchor.constraint(
+                greaterThanOrEqualToConstant: AEMotionProductTheme.minimumTouchTarget
+            ).isActive = true
+            heightAnchor.constraint(
+                equalToConstant: AEMotionProductTheme.minimumTouchTarget
+            ).isActive = true
             tintColor = .white
         }
     }
 
+    private var displayTitle: String {
+        switch item {
+        case .tab(.home): return "Home"
+        case .tab(.tutorials): return "Tutorials"
+        case .tab(.projects): return "Projects"
+        case .tab(.templates): return "Templates"
+        case .create: return "Create"
+        }
+    }
+
+    private var identifierComponent: String {
+        switch item {
+        case .tab(let tab): return tab.rawValue
+        case .create: return "create"
+        }
+    }
+
     private var iconName: String {
-        switch tab {
-        case .home: return "house.fill"
-        case .tutorials: return "play.rectangle.fill"
+        switch item {
+        case .tab(.home): return "house.fill"
+        case .tab(.tutorials): return "play.rectangle.fill"
+        case .tab(.projects): return "square.stack.3d.up.fill"
+        case .tab(.templates): return "sparkles.rectangle.stack.fill"
         case .create: return "plus"
-        case .projects: return "square.stack.3d.up.fill"
-        case .templates: return "sparkles.rectangle.stack.fill"
         }
     }
 }
