@@ -16,7 +16,7 @@ checks = {
     "framework bundle": "AEMotionUI272.framework",
     "framework executable": 'CFBundleExecutable": "AEMotionUI272"',
     "release version": 'CFBundleShortVersionString": "2.7.2"',
-    "release build": 'CFBundleVersion": "850"',
+    "release build": 'CFBundleVersion": "851"',
     "install name": "@rpath/AEMotionUI272.framework/AEMotionUI272",
 }
 for name, token in checks.items():
@@ -33,4 +33,4 @@ for forbidden in (
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
-print("PASS: separately signable AEMotionUI272 framework contract")
+print("PASS: Build 851 separately signable framework contract")
