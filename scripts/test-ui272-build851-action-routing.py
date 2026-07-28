@@ -24,13 +24,15 @@ required = {
     "World production controller": r"WorldStudioProjectBrowserViewController",
     "explicit studio close": r"barButtonSystemItem:\s*\.close",
     "state after result": r"handleActionResult.*confirmNonRoot",
+    "quick tool verifies after send": r"sendActions\(for:\s*\.touchUpInside\).*asyncAfter.*completion\(\.opened\(\.tool\)\)",
+    "host route verifies after send": r"sendActions\(for:\s*\.touchUpInside\).*asyncAfter.*changedController.*editorOpened.*completion\(\.opened",
 }
 
 failed = [name for name, pattern in required.items() if re.search(pattern, combined, re.S) is None]
-if re.search(r"completion\(\.opened.*\).*sendActions", router, re.S):
-    failed.append("optimistic success before action verification")
 if "controls: [AEMotionHomeAction: UIControl]" in router:
     failed.append("legacy hidden-control map")
+if re.search(r"sendActions\(for:\s*\.touchUpInside\)\s*\n\s*completion\(\.opened", router):
+    failed.append("immediate optimistic success")
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
