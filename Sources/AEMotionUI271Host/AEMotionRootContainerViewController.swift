@@ -9,6 +9,7 @@ final class AEMotionRootContainerViewController: UIViewController {
     let shellController: AEMotionShellViewController
 
     private(set) var routeState: AEMotionRouteState
+
     private lazy var actionRouter = AEMotionActionRouter(
         hostRootController: hostController,
         hostTabController: hostTabController
@@ -35,12 +36,6 @@ final class AEMotionRootContainerViewController: UIViewController {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    deinit {
-        if let backgroundObserver {
-            NotificationCenter.default.removeObserver(backgroundObserver)
-        }
     }
 
     override func viewDidLoad() {
@@ -83,19 +78,17 @@ final class AEMotionRootContainerViewController: UIViewController {
     }
 
     func selectRootTab(_ tab: AEMotionRootTab, animated: Bool) {
-        AEMotionRouteReducer.reduce(
-            state: &routeState,
-            event: .selectTab(tab)
-        )
+        reduce(.selectTab(tab))
         applyRoute(animated: animated)
     }
 
     func dismissCreateTray(animated: Bool) {
-        AEMotionRouteReducer.reduce(
-            state: &routeState,
-            event: .dismissCreateTray
-        )
+        reduce(.dismissCreateTray)
         applyRoute(animated: animated)
+    }
+
+    private func reduce(_ event: AEMotionRouteEvent) {
+        AEMotionRouteReducer.reduce(state: &routeState, event: event)
     }
 
     private func configureShellCallbacks() {
@@ -104,11 +97,8 @@ final class AEMotionRootContainerViewController: UIViewController {
         }
         shellController.onToggleCreate = { [weak self] in
             guard let self else { return }
-            AEMotionRouteReducer.reduce(
-                state: &routeState,
-                event: .toggleCreateTray
-            )
-            applyRoute(animated: true)
+            self.reduce(.toggleCreateTray)
+            self.applyRoute(animated: true)
         }
         shellController.onDismissCreate = { [weak self] in
             self?.dismissCreateTray(animated: true)
@@ -132,11 +122,8 @@ final class AEMotionRootContainerViewController: UIViewController {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                AEMotionRouteReducer.reduce(
-                    state: &routeState,
-                    event: .applicationDidEnterBackground
-                )
-                applyRoute(animated: false)
+                self.reduce(.applicationDidEnterBackground)
+                self.applyRoute(animated: false)
             }
         }
     }
@@ -169,43 +156,28 @@ final class AEMotionRootContainerViewController: UIViewController {
     private func handleActionResult(_ result: AEMotionActionResult) {
         switch result {
         case .opened(let route):
-            AEMotionRouteReducer.reduce(
-                state: &routeState,
-                event: .confirmNonRoot(route)
-            )
+            reduce(.confirmNonRoot(route))
             applyRoute(animated: true)
 
         case .requiresOpenProject:
-            AEMotionRouteReducer.reduce(
-                state: &routeState,
-                event: .routeFailed
-            )
+            reduce(.routeFailed)
             showAlert(
                 title: "Open a project first",
                 message: "Open an existing project, then choose the tool again."
             )
 
         case .unavailable(let reason):
-            AEMotionRouteReducer.reduce(
-                state: &routeState,
-                event: .routeFailed
-            )
+            reduce(.routeFailed)
             showAlert(title: "Unavailable", message: reason)
 
         case .failed(let reason):
-            AEMotionRouteReducer.reduce(
-                state: &routeState,
-                event: .routeFailed
-            )
+            reduce(.routeFailed)
             showAlert(title: "Could not open", message: reason)
         }
     }
 
     private func returnFromNonRoot() {
-        AEMotionRouteReducer.reduce(
-            state: &routeState,
-            event: .returnToRoot(routeState.selectedTab)
-        )
+        reduce(.returnToRoot(routeState.selectedTab))
         applyRoute(animated: false)
     }
 
@@ -215,13 +187,10 @@ final class AEMotionRootContainerViewController: UIViewController {
             completion: { [weak self] didPresent in
                 guard let self else { return }
                 if didPresent {
-                    AEMotionRouteReducer.reduce(
-                        state: &routeState,
-                        event: .presentModal(.settings)
-                    )
-                    applyRoute(animated: false)
+                    self.reduce(.presentModal(.settings))
+                    self.applyRoute(animated: false)
                 } else {
-                    showAlert(
+                    self.showAlert(
                         title: "Settings unavailable",
                         message: "The Settings screen could not be loaded."
                     )
@@ -239,13 +208,10 @@ final class AEMotionRootContainerViewController: UIViewController {
             completion: { [weak self] didPresent in
                 guard let self else { return }
                 if didPresent {
-                    AEMotionRouteReducer.reduce(
-                        state: &routeState,
-                        event: .presentModal(.account)
-                    )
-                    applyRoute(animated: false)
+                    self.reduce(.presentModal(.account))
+                    self.applyRoute(animated: false)
                 } else {
-                    showAlert(
+                    self.showAlert(
                         title: "Account unavailable",
                         message: "The Account screen could not be loaded."
                     )
@@ -269,17 +235,15 @@ final class AEMotionRootContainerViewController: UIViewController {
             guard let self,
                   self.presentedViewController == nil,
                   self.routeState.modal == nil,
-                  self.routeState.nonRoot == nil else { return }
+                  self.routeState.nonRoot == nil,
+                  !self.routeState.isCreateTrayPresented else { return }
 
             AEMotionLaunchOverlay.presentIfNeeded(
                 from: self,
                 completion: { [weak self] didPresent in
                     guard let self, didPresent else { return }
-                    AEMotionRouteReducer.reduce(
-                        state: &routeState,
-                        event: .presentModal(.officialChannel)
-                    )
-                    applyRoute(animated: false)
+                    self.reduce(.presentModal(.officialChannel))
+                    self.applyRoute(animated: false)
                 },
                 onDismiss: { [weak self] in
                     self?.modalDidDismiss()
@@ -289,10 +253,7 @@ final class AEMotionRootContainerViewController: UIViewController {
     }
 
     private func modalDidDismiss() {
-        AEMotionRouteReducer.reduce(
-            state: &routeState,
-            event: .dismissModal
-        )
+        reduce(.dismissModal)
         applyRoute(animated: false)
     }
 
@@ -303,8 +264,7 @@ final class AEMotionRootContainerViewController: UIViewController {
 
         let usesHostRootContent = routeState.selectedTab == .projects
             || routeState.selectedTab == .templates
-        let hostContentActive = routeState.nonRoot != nil
-            || (routeState.nonRoot == nil && usesHostRootContent)
+        let hostContentActive = routeState.nonRoot != nil || usesHostRootContent
         hostController.view.isUserInteractionEnabled = hostContentActive
 
         if routeState.nonRoot == nil && usesHostRootContent {
@@ -322,6 +282,7 @@ final class AEMotionRootContainerViewController: UIViewController {
         guard let index = hostTabIndex(for: tab),
               let controllers = hostTabController.viewControllers,
               controllers.indices.contains(index) else { return }
+
         if hostTabController.selectedIndex != index {
             hostTabController.selectedIndex = index
             hostTabController.selectedViewController = controllers[index]
@@ -332,10 +293,14 @@ final class AEMotionRootContainerViewController: UIViewController {
         guard let controllers = hostTabController.viewControllers else { return nil }
         let markers: [String]
         switch tab {
-        case .home: markers = ["homevc", "homeviewvc"]
-        case .tutorials: markers = ["tutorialsviewvc", "tutorialvc", "learning"]
-        case .projects: markers = ["projectslistvc", "projectsvc"]
-        case .templates: markers = ["templateslistvc", "templatesshowcasevc", "templatesvc"]
+        case .home:
+            markers = ["homevc", "homeviewvc"]
+        case .tutorials:
+            markers = ["tutorialsviewvc", "tutorialvc", "learning"]
+        case .projects:
+            markers = ["projectslistvc", "projectsvc"]
+        case .templates:
+            markers = ["templateslistvc", "templatesshowcasevc", "templatesvc"]
         }
 
         if let index = controllers.firstIndex(where: {
@@ -377,11 +342,13 @@ final class AEMotionRootContainerViewController: UIViewController {
     private func prepareHostSurface(for tab: AEMotionRootTab) {
         guard tab == .projects || tab == .templates,
               let selected = hostTabController.selectedViewController else { return }
+
         let leaf = visibleLeaf(from: selected)
-        if let existing = adapters[tab] {
-            existing.refreshForRootPresentation()
+        if let adapter = adapters[tab] {
+            adapter.refreshForRootPresentation()
             return
         }
+
         let role: AEMotionHostSurfaceRole = tab == .projects
             ? .projects
             : .templates
