@@ -19,12 +19,12 @@ for forbidden in (
         failed.append(f"forbidden legacy loader token: {forbidden}")
 if 'marketingVersion = "2.7.2"' not in release:
     failed.append("release version is not 2.7.2")
-if "buildNumber = 850" not in release:
-    failed.append("release build is not 850")
+if "buildNumber = 851" not in release:
+    failed.append("release build is not 851")
 if 'AEMotionUI272Install' not in installer:
     failed.append("2.7.2 installer symbol is missing")
 
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
-print("PASS: no unsafe legacy wrapper loader")
+print("PASS: Build 851 has no unsafe legacy wrapper loader")
