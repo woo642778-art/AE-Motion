@@ -28,7 +28,7 @@ checks = {
 failed = [name for name, (text, pattern) in checks.items() if re.search(pattern, text, re.S | re.I) is None]
 
 forbidden = {
-    "root controller replacement": r"window\.rootViewController\s*=",
+    "root controller replacement": r"window\.rootViewController\s*=\s*(?!=)",
     "root container installation": r"ensureRootContainer|AEMotionRootContainerViewController\(",
     "launch notification polling": r"UIApplication\.didFinishLaunchingNotification",
     "index fallback before readiness": r"controllers\.count\s*==\s*4|controllers\.count\s*>=\s*5",
