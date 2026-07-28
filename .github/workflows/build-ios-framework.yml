@@ -62,6 +62,7 @@ jobs:
             scripts/test-ui272-framework-contract.py
             scripts/test-ui272-device-regression-contract.py
             scripts/test-ui272-build849-host-bootstrap.py
+            scripts/test-ui272-build850-noninvasive-bootstrap.py
             scripts/test-macho-load-command.py
             scripts/test-known-2.7-fixes.py
             scripts/test-package-ui272-ipa.py
