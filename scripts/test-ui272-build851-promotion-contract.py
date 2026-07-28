@@ -30,14 +30,14 @@ required = {
 }
 
 failed = [name for name, pattern in required.items() if re.search(pattern, combined, re.S | re.I) is None]
-for name, pattern in {
-    "unmanaged official overlay": r"window\.addSubview\(overlay\)",
-    "new startup window": r"UIWindow\s*\(",
-    "key-window takeover": r"makeKeyAndVisible|\.makeKey\s*\(",
-    "unbounded suppression": r"while\s+true|repeatCount\s*=\s*\.infinity",
-    "generic dark view suppression": r"backgroundColor.*black.*isHidden\s*=\s*true",
-}.items():
-    if re.search(pattern, combined, re.S | re.I):
+for name, pattern, source in (
+    ("unmanaged official overlay", r"window\.addSubview\(overlay\)", official),
+    ("new startup window", r"UIWindow\s*\(", official),
+    ("key-window takeover", r"makeKeyAndVisible|\.makeKey\s*\(", official),
+    ("unbounded suppression", r"while\s+true|repeatCount\s*=\s*\.infinity", suppressor),
+    ("color-based legacy suppression", r"backgroundColor.*(?:black|white).*isHidden\s*=\s*true", suppressor),
+):
+    if re.search(pattern, source, re.S | re.I):
         failed.append(name)
 
 if failed:
