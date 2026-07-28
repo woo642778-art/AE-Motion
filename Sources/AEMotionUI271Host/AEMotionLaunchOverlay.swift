@@ -3,190 +3,83 @@ import UIKit
 
 @MainActor
 enum AEMotionLaunchOverlay {
-    private static let channelURL = URL(string: "https://t.me/aemotionios")!
-    private static let channelDismissedKey = "aemotion.build848.official-channel-dismissed"
-    private static let presentationDelay: TimeInterval = 0.30
-    private static let maximumPresentationAttempts = 40
+    static let officialChannelURL = URL(string: "https://t.me/aemotionios")!
 
-    private static var hasInstalled = false
-    private static var isPresentationScheduled = false
-    private static var isPresented = false
-    private static var isCompleted = false
-    private static weak var overlayView: AEMotionOfficialChannelOverlayView?
+    private static let dismissedKey = "aemotion.build851.official-channel-dismissed"
+    private static var isPresenting = false
 
-    static func install() {
-        hasInstalled = true
-    }
+    static func install() {}
 
-    static func markShellReady() {
-        guard hasInstalled,
-              !isCompleted,
-              !isPresented,
-              !isPresentationScheduled else { return }
+    static func markShellReady() {}
 
-        if UserDefaults.standard.bool(forKey: channelDismissedKey) {
-            isCompleted = true
+    static func presentIfNeeded(
+        from presenter: UIViewController,
+        completion: @escaping (Bool) -> Void,
+        onDismiss: @escaping () -> Void
+    ) {
+        guard !isPresenting,
+              !UserDefaults.standard.bool(forKey: dismissedKey),
+              presenter.presentedViewController == nil else {
+            completion(false)
             return
         }
 
-        isPresentationScheduled = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + presentationDelay) {
-            presentInExistingApplicationWindow(attempt: 0)
+        isPresenting = true
+        let controller = AEMotionOfficialChannelViewController()
+        controller.onJoin = {
+            UIApplication.shared.open(
+                officialChannelURL,
+                options: [:],
+                completionHandler: nil
+            )
         }
-    }
-
-    private static func presentInExistingApplicationWindow(attempt: Int) {
-        guard hasInstalled, !isCompleted, !isPresented else { return }
-
-        guard let window = preferredExistingApplicationWindow() else {
-            guard attempt < maximumPresentationAttempts else {
-                isPresentationScheduled = false
-                return
+        controller.onContinue = {
+            UserDefaults.standard.set(true, forKey: dismissedKey)
+            controller.dismiss(animated: true) {
+                isPresenting = false
+                onDismiss()
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
-                presentInExistingApplicationWindow(attempt: attempt + 1)
-            }
-            return
         }
-
-        let overlay = AEMotionOfficialChannelOverlayView()
-        overlay.translatesAutoresizingMaskIntoConstraints = false
-        overlay.onJoinChannel = {
-            UIApplication.shared.open(channelURL, options: [:], completionHandler: nil)
+        controller.modalPresentationStyle = .overFullScreen
+        controller.modalTransitionStyle = .crossDissolve
+        presenter.present(controller, animated: true) {
+            completion(true)
         }
-        overlay.onContinue = {
-            UserDefaults.standard.set(true, forKey: channelDismissedKey)
-            dismiss(animated: true)
-        }
-
-        window.addSubview(overlay)
-        NSLayoutConstraint.activate([
-            overlay.leadingAnchor.constraint(equalTo: window.leadingAnchor),
-            overlay.trailingAnchor.constraint(equalTo: window.trailingAnchor),
-            overlay.topAnchor.constraint(equalTo: window.topAnchor),
-            overlay.bottomAnchor.constraint(equalTo: window.bottomAnchor),
-        ])
-        window.bringSubviewToFront(overlay)
-
-        overlayView = overlay
-        isPresentationScheduled = false
-        isPresented = true
-        overlay.present(animated: true)
-    }
-
-    private static func preferredExistingApplicationWindow() -> UIWindow? {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .filter {
-                $0.activationState == .foregroundActive
-                    || $0.activationState == .foregroundInactive
-            }
-            .flatMap(\.windows)
-            .filter {
-                !$0.isHidden
-                    && $0.alpha > 0.01
-                    && $0.windowLevel == .normal
-                    && $0.rootViewController != nil
-                    && !$0.bounds.isEmpty
-            }
-            .max { left, right in
-                if left.isKeyWindow != right.isKeyWindow {
-                    return !left.isKeyWindow && right.isKeyWindow
-                }
-                let leftArea = left.bounds.width * left.bounds.height
-                let rightArea = right.bounds.width * right.bounds.height
-                return leftArea < rightArea
-            }
-    }
-
-    private static func dismiss(animated: Bool) {
-        guard !isCompleted else { return }
-        isCompleted = true
-        isPresented = false
-        isPresentationScheduled = false
-
-        guard let overlay = overlayView else { return }
-        overlay.dismiss(animated: animated) {
-            overlay.removeFromSuperview()
-        }
-        overlayView = nil
     }
 }
 
 @MainActor
-private final class AEMotionOfficialChannelOverlayView: UIView {
-    var onJoinChannel: (() -> Void)?
+private final class AEMotionOfficialChannelViewController: UIViewController {
+    var onJoin: (() -> Void)?
     var onContinue: (() -> Void)?
 
     private let dimView = UIView()
     private let cardView = UIView()
+    private let scrollView = UIScrollView()
+    private let contentStack = UIStackView()
 
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        accessibilityIdentifier = "aemotion.official-channel.overlay"
-        accessibilityViewIsModal = true
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        view.accessibilityIdentifier = "aemotion.official-channel.root"
+        view.accessibilityViewIsModal = true
         configureHierarchy()
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        accessibilityIdentifier = "aemotion.official-channel.overlay"
-        accessibilityViewIsModal = true
-        configureHierarchy()
-    }
-
-    func present(animated: Bool) {
-        guard animated, !UIAccessibility.isReduceMotionEnabled else {
-            alpha = 1
-            cardView.transform = .identity
-            return
-        }
-
-        alpha = 0
-        cardView.transform = CGAffineTransform(translationX: 0, y: 22)
-            .scaledBy(x: 0.96, y: 0.96)
-        UIView.animate(
-            withDuration: 0.32,
-            delay: 0,
-            usingSpringWithDamping: 0.86,
-            initialSpringVelocity: 0.4,
-            options: [.allowUserInteraction, .beginFromCurrentState]
-        ) {
-            self.alpha = 1
-            self.cardView.transform = .identity
-        }
-    }
-
-    func dismiss(animated: Bool, completion: @escaping () -> Void) {
-        guard animated, !UIAccessibility.isReduceMotionEnabled else {
-            completion()
-            return
-        }
-
-        UIView.animate(
-            withDuration: 0.22,
-            delay: 0,
-            options: [.curveEaseIn, .beginFromCurrentState]
-        ) {
-            self.alpha = 0
-            self.cardView.transform = CGAffineTransform(translationX: 0, y: 12)
-                .scaledBy(x: 0.98, y: 0.98)
-        } completion: { _ in
-            completion()
-        }
     }
 
     private func configureHierarchy() {
-        backgroundColor = .clear
-
         dimView.translatesAutoresizingMaskIntoConstraints = false
         dimView.backgroundColor = UIColor.black.withAlphaComponent(
             UIAccessibility.isReduceTransparencyEnabled ? 0.96 : 0.78
         )
-        addSubview(dimView)
+        view.addSubview(dimView)
 
         cardView.translatesAutoresizingMaskIntoConstraints = false
-        cardView.backgroundColor = UIColor(red: 0.055, green: 0.050, blue: 0.080, alpha: 1)
+        cardView.backgroundColor = UIColor(
+            red: 0.055,
+            green: 0.050,
+            blue: 0.080,
+            alpha: 1
+        )
         cardView.layer.cornerRadius = 28
         cardView.layer.cornerCurve = .continuous
         cardView.layer.borderWidth = 1
@@ -195,7 +88,18 @@ private final class AEMotionOfficialChannelOverlayView: UIView {
         cardView.layer.shadowOpacity = 0.42
         cardView.layer.shadowRadius = 26
         cardView.layer.shadowOffset = CGSize(width: 0, height: 16)
-        addSubview(cardView)
+        view.addSubview(cardView)
+
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.alwaysBounceVertical = false
+        scrollView.showsVerticalScrollIndicator = true
+        cardView.addSubview(scrollView)
+
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        contentStack.axis = .vertical
+        contentStack.alignment = .fill
+        contentStack.spacing = 14
+        scrollView.addSubview(contentStack)
 
         let mark = UILabel()
         mark.translatesAutoresizingMaskIntoConstraints = false
@@ -203,12 +107,17 @@ private final class AEMotionOfficialChannelOverlayView: UIView {
         mark.textColor = .white
         mark.textAlignment = .center
         mark.font = .systemFont(ofSize: 29, weight: .bold)
-        mark.backgroundColor = UIColor(red: 0.45, green: 0.20, blue: 0.98, alpha: 1)
+        mark.backgroundColor = AEMotionProductTheme.accentPurple
         mark.layer.cornerRadius = 19
         mark.layer.cornerCurve = .continuous
         mark.clipsToBounds = true
 
-        let title = makeLabel("AE Motion iOS", size: 29, weight: .bold, color: .white)
+        let title = makeLabel(
+            "AE Motion iOS",
+            size: 29,
+            weight: .bold,
+            color: .white
+        )
         let subtitle = makeLabel(
             "Official Channel",
             size: 18,
@@ -229,61 +138,83 @@ private final class AEMotionOfficialChannelOverlayView: UIView {
         )
         join.accessibilityIdentifier = "aemotion.official-channel.join"
         join.addAction(UIAction { [weak self] _ in
-            self?.onJoinChannel?()
+            self?.onJoin?()
         }, for: .touchUpInside)
 
         let continueButton = makeButton(
             title: "Continue to AE Motion",
-            backgroundColor: UIColor(red: 0.45, green: 0.20, blue: 0.98, alpha: 1)
+            backgroundColor: AEMotionProductTheme.accentPurple
         )
         continueButton.accessibilityIdentifier = "aemotion.official-channel.continue"
         continueButton.addAction(UIAction { [weak self] _ in
             self?.onContinue?()
         }, for: .touchUpInside)
 
-        let stack = UIStackView(arrangedSubviews: [
-            mark,
-            title,
-            subtitle,
-            message,
-            join,
-            continueButton,
-        ])
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.axis = .vertical
-        stack.alignment = .fill
-        stack.spacing = 14
-        stack.setCustomSpacing(22, after: message)
-        cardView.addSubview(stack)
+        [mark, title, subtitle, message, join, continueButton]
+            .forEach(contentStack.addArrangedSubview)
+        contentStack.setCustomSpacing(22, after: message)
+
+        let adaptiveWidth = cardView.widthAnchor.constraint(
+            equalTo: view.safeAreaLayoutGuide.widthAnchor,
+            constant: -40
+        )
+        adaptiveWidth.priority = UILayoutPriority(999)
 
         NSLayoutConstraint.activate([
-            dimView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            dimView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            dimView.topAnchor.constraint(equalTo: topAnchor),
-            dimView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            dimView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            dimView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            dimView.topAnchor.constraint(equalTo: view.topAnchor),
+            dimView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
+            cardView.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor),
+            cardView.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor),
             cardView.leadingAnchor.constraint(
-                greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor,
-                constant: 22
+                greaterThanOrEqualTo: view.safeAreaLayoutGuide.leadingAnchor,
+                constant: 20
             ),
             cardView.trailingAnchor.constraint(
-                lessThanOrEqualTo: safeAreaLayoutGuide.trailingAnchor,
-                constant: -22
+                lessThanOrEqualTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -20
             ),
-            cardView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            cardView.centerYAnchor.constraint(equalTo: centerYAnchor),
             cardView.widthAnchor.constraint(lessThanOrEqualToConstant: 430),
+            cardView.heightAnchor.constraint(
+                lessThanOrEqualTo: view.safeAreaLayoutGuide.heightAnchor,
+                constant: -40
+            ),
+            adaptiveWidth,
 
-            stack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 24),
-            stack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -24),
-            stack.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 26),
-            stack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -24),
+            scrollView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: cardView.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor),
+
+            contentStack.leadingAnchor.constraint(
+                equalTo: scrollView.contentLayoutGuide.leadingAnchor,
+                constant: 24
+            ),
+            contentStack.trailingAnchor.constraint(
+                equalTo: scrollView.contentLayoutGuide.trailingAnchor,
+                constant: -24
+            ),
+            contentStack.topAnchor.constraint(
+                equalTo: scrollView.contentLayoutGuide.topAnchor,
+                constant: 26
+            ),
+            contentStack.bottomAnchor.constraint(
+                equalTo: scrollView.contentLayoutGuide.bottomAnchor,
+                constant: -24
+            ),
+            contentStack.widthAnchor.constraint(
+                equalTo: scrollView.frameLayoutGuide.widthAnchor,
+                constant: -48
+            ),
 
             mark.widthAnchor.constraint(equalToConstant: 76),
             mark.heightAnchor.constraint(equalToConstant: 76),
             join.heightAnchor.constraint(equalToConstant: 56),
             continueButton.heightAnchor.constraint(equalToConstant: 56),
         ])
+
         mark.setContentHuggingPriority(.required, for: .horizontal)
         mark.setContentCompressionResistancePriority(.required, for: .horizontal)
     }
@@ -300,14 +231,21 @@ private final class AEMotionOfficialChannelOverlayView: UIView {
         label.textColor = color
         label.textAlignment = .center
         label.adjustsFontForContentSizeCategory = true
+        label.numberOfLines = 0
         return label
     }
 
-    private func makeButton(title: String, backgroundColor: UIColor) -> UIButton {
+    private func makeButton(
+        title: String,
+        backgroundColor: UIColor
+    ) -> UIButton {
         let button = UIButton(type: .system)
         button.setTitle(title, for: .normal)
         button.setTitleColor(.white, for: .normal)
         button.titleLabel?.font = .systemFont(ofSize: 17, weight: .bold)
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.titleLabel?.numberOfLines = 2
+        button.titleLabel?.textAlignment = .center
         button.backgroundColor = backgroundColor
         button.layer.cornerRadius = 16
         button.layer.cornerCurve = .continuous
