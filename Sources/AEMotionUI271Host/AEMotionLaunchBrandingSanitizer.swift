@@ -5,13 +5,17 @@ import UIKit
 enum AEMotionLaunchBrandingSanitizer {
     static let officialChannelURL = URL(string: "https://t.me/aemotionios")!
 
+    private static let maximumScans = 40
+    private static let scanInterval: TimeInterval = 0.15
     private static var hasInstalled = false
+    private static var scanCount = 0
     private static var observers: [NSObjectProtocol] = []
-    private static var generation = 0
+    private static var pendingWorkItem: DispatchWorkItem?
 
     static func install() {
         guard !hasInstalled else { return }
         hasInstalled = true
+        scanCount = 0
 
         let center = NotificationCenter.default
         for name in [
@@ -23,108 +27,171 @@ enum AEMotionLaunchBrandingSanitizer {
                 object: nil,
                 queue: .main
             ) { _ in
-                Task { @MainActor in scheduleSanitizationBurst() }
+                Task { @MainActor in scheduleNextScan() }
             })
         }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.40) {
-            scheduleSanitizationBurst()
-        }
+        scheduleNextScan()
     }
 
     static func sanitizeNow() {
-        sanitizeVisibleLegacyPromotion()
+        suppressVerifiedLegacyPromotion()
     }
 
-    private static func scheduleSanitizationBurst() {
-        generation += 1
-        let currentGeneration = generation
-        for attempt in 0..<80 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(attempt) * 0.10) {
-                guard currentGeneration == generation else { return }
-                sanitizeVisibleLegacyPromotion()
+    private static func scheduleNextScan() {
+        guard scanCount < maximumScans,
+              pendingWorkItem == nil else {
+            if scanCount >= maximumScans {
+                stop()
             }
+            return
         }
-    }
 
-    private static func sanitizeVisibleLegacyPromotion() {
-        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
-            for window in scene.windows where !window.isHidden {
-                if containsLegacyBranding(in: window) {
-                    if window.windowLevel > .normal {
-                        window.isHidden = true
-                        continue
-                    }
-
-                    if let root = window.rootViewController,
-                       let presented = root.presentedViewController,
-                       presented.isViewLoaded,
-                       containsLegacyBranding(in: presented.view) {
-                        presented.dismiss(animated: false)
-                        continue
-                    }
-
-                    hideLegacySubview(in: window)
+        let item = DispatchWorkItem {
+            Task { @MainActor in
+                pendingWorkItem = nil
+                scanCount += 1
+                suppressVerifiedLegacyPromotion()
+                if scanCount < maximumScans {
+                    scheduleNextScan()
+                } else {
+                    stop()
                 }
             }
         }
+        pendingWorkItem = item
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + scanInterval,
+            execute: item
+        )
     }
 
-    private static func hideLegacySubview(in root: UIView) {
-        guard let target = firstLegacyBrandingView(in: root) else { return }
-        var candidate = target
-        while let superview = candidate.superview,
-              superview !== root,
-              coverage(of: superview, in: root) < 0.55 {
-            candidate = superview
-        }
-        candidate.isHidden = true
-        candidate.isUserInteractionEnabled = false
+    private static func stop() {
+        pendingWorkItem?.cancel()
+        pendingWorkItem = nil
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers.removeAll()
     }
 
-    private static func firstLegacyBrandingView(in view: UIView) -> UIView? {
-        if textFragments(in: view).contains(where: isLegacyBrandingText) {
-            return view
-        }
-        for child in view.subviews {
-            if let match = firstLegacyBrandingView(in: child) { return match }
-        }
-        return nil
-    }
+    private static func suppressVerifiedLegacyPromotion() {
+        for scene in UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene }) {
+            for window in scene.windows where !window.isHidden {
+                if window.windowLevel > .normal,
+                   isVerifiedLegacyPromotion(in: window) {
+                    window.isHidden = true
+                    window.rootViewController = nil
+                    continue
+                }
 
-    private static func containsLegacyBranding(in view: UIView) -> Bool {
-        firstLegacyBrandingView(in: view) != nil
-    }
+                guard window.windowLevel == .normal,
+                      let root = window.rootViewController else { continue }
 
-    private static func textFragments(in view: UIView) -> [String] {
-        var values: [String] = []
-        if let label = view as? UILabel, let text = label.text { values.append(text) }
-        if let textView = view as? UITextView, let text = textView.text { values.append(text) }
-        if let field = view as? UITextField, let text = field.text { values.append(text) }
-        if let button = view as? UIButton {
-            for state: UIControl.State in [.normal, .highlighted, .selected, .disabled] {
-                if let title = button.title(for: state) { values.append(title) }
+                if let presented = root.presentedViewController,
+                   isVerifiedLegacyPromotion(controller: presented) {
+                    presented.dismiss(animated: false)
+                }
+
+                hideVerifiedLegacyOverlaySubview(in: window)
             }
         }
-        if let accessibilityLabel = view.accessibilityLabel { values.append(accessibilityLabel) }
-        return values
     }
 
-    private static func isLegacyBrandingText(_ text: String) -> Bool {
-        let normalized = text
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    private static func isVerifiedLegacyPromotion(
+        controller: UIViewController
+    ) -> Bool {
+        let className = NSStringFromClass(type(of: controller)).lowercased()
+        let classSignature = className.contains("blatant")
+            || className.contains("promotion")
+            || className.contains("telegram")
+        return isVerifiedLegacyPromotion(in: controller.view)
+            && (classSignature || hasLegacyButtonStructure(in: controller.view))
+    }
+
+    private static func isVerifiedLegacyPromotion(in view: UIView) -> Bool {
+        let strings = allText(in: view).map(normalize)
+        let hasBranding = strings.contains { value in
+            value.contains("blatant")
+                || value.contains("cracked by")
+                || value.contains("t.me/blatants")
+        }
+        let hasLegacyTelegramButton = strings.contains { value in
+            value.contains("my telegram")
+                || value.contains("join telegram")
+        }
+        return hasBranding && hasLegacyTelegramButton
+    }
+
+    private static func hasLegacyButtonStructure(in view: UIView) -> Bool {
+        let buttons = allViews(in: view).compactMap { $0 as? UIButton }
+        let titles = buttons.flatMap { button in
+            [
+                button.title(for: .normal),
+                button.accessibilityLabel,
+            ].compactMap { $0 }.map(normalize)
+        }
+        let hasClose = titles.contains { $0 == "close" || $0.contains("continue") }
+        let hasTelegram = titles.contains { $0.contains("telegram") }
+        return hasClose && hasTelegram
+    }
+
+    private static func hideVerifiedLegacyOverlaySubview(in root: UIView) {
+        for subview in root.subviews.reversed() {
+            guard subview.accessibilityIdentifier != "aemotion.official-channel.root",
+                  isVerifiedLegacyPromotion(in: subview),
+                  hasLegacyButtonStructure(in: subview) else { continue }
+            subview.isHidden = true
+            subview.isUserInteractionEnabled = false
+            subview.removeFromSuperview()
+            return
+        }
+    }
+
+    private static func allText(in root: UIView) -> [String] {
+        allViews(in: root).flatMap { view -> [String] in
+            var values: [String] = []
+            if let label = view as? UILabel, let text = label.text {
+                values.append(text)
+            }
+            if let textView = view as? UITextView, let text = textView.text {
+                values.append(text)
+            }
+            if let field = view as? UITextField, let text = field.text {
+                values.append(text)
+            }
+            if let button = view as? UIButton {
+                if let title = button.title(for: .normal) {
+                    values.append(title)
+                }
+            }
+            if let label = view.accessibilityLabel {
+                values.append(label)
+            }
+            if let value = view.accessibilityValue {
+                values.append(value)
+            }
+            return values
+        }
+    }
+
+    private static func allViews(in root: UIView) -> [UIView] {
+        var result: [UIView] = []
+        var queue: [UIView] = [root]
+        while let view = queue.first {
+            queue.removeFirst()
+            result.append(view)
+            queue.append(contentsOf: view.subviews)
+        }
+        return result
+    }
+
+    private static func normalize(_ value: String) -> String {
+        value
+            .folding(
+                options: [.caseInsensitive, .diacriticInsensitive],
+                locale: .current
+            )
             .lowercased()
-        return normalized.contains("blatant")
-            || normalized.contains("cracked by")
-            || normalized.contains("my telegram")
-            || normalized.contains("t.me/blatants")
-    }
-
-    private static func coverage(of view: UIView, in root: UIView) -> CGFloat {
-        let rootArea = max(1, root.bounds.width * root.bounds.height)
-        let frame = view.convert(view.bounds, to: root).intersection(root.bounds)
-        guard !frame.isNull, !frame.isEmpty else { return 0 }
-        return (frame.width * frame.height) / rootArea
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 #endif
