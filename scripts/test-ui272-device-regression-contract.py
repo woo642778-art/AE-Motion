@@ -44,7 +44,7 @@ checks = {
     "official URL": (official, r"https://t\.me/aemotionios"),
     "controller modal official card": (official, r"modalPresentationStyle\s*=\s*\.overFullScreen"),
     "adaptive card width": (official, r"safeAreaLayoutGuide\.widthAnchor.*constant:\s*-40"),
-    "Build 851 release": (release + build, r"buildNumber\s*=\s*851.*CFBundleVersion\": \"851\""),
+    "Build 852 release": (release + build, r"buildNumber\s*=\s*852.*CFBundleVersion\": \"852\""),
 }
 
 failed = [
@@ -65,4 +65,4 @@ for name, pattern in {
 if failed:
     print("FAIL: " + ", ".join(failed))
     sys.exit(1)
-print("PASS: Build 851 device regression contract")
+print("PASS: Build 852 device regression contract")
