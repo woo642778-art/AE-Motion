@@ -21,6 +21,7 @@ DIAGNOSTIC_DISPLAY_NAME = "AE Motion 850"
 ALIGHT_MOTION_LOAD_PATH = "@rpath/AlightMotion.dylib"
 BLATANT_LOAD_PATH = "@rpath/blatantsPatch.dylib"
 
+_original_copy_ui_framework = module.copy_ui_framework
 _original_update_release_metadata = module.update_release_metadata
 _original_verify_output = module.verify_output
 
@@ -73,6 +74,29 @@ def patch_main_executable(app: Path) -> dict[str, object]:
     }
 
 
+def copy_ui_framework(source: Path, app: Path) -> Path:
+    destination = _original_copy_ui_framework(source, app)
+    executable = destination / module.UI_EXECUTABLE_NAME
+    data = executable.read_bytes()
+    replacements = {
+        b"Build 846": b"Build 850",
+        b"aemotion.build848.official-channel-dismissed":
+            b"aemotion.build850.official-channel-dismissed",
+    }
+    for old, new in replacements.items():
+        if len(old) != len(new):
+            raise module.PackageError("framework metadata replacement changed byte length")
+        count = data.count(old)
+        if count != 1:
+            raise module.PackageError(
+                f"expected one framework metadata token {old!r}, found {count}"
+            )
+        data = data.replace(old, new)
+    executable.write_bytes(data)
+    os.chmod(executable, 0o755)
+    return destination
+
+
 def update_release_metadata(app: Path) -> None:
     _original_update_release_metadata(app)
     path = app / module.INFO_RELATIVE
@@ -112,6 +136,14 @@ def verify_output(output: Path) -> dict[str, object]:
                 "AlightMotion.dylib differs from the verified strings-only patch"
             )
 
+        framework = archive.read(
+            prefix + f"Frameworks/{module.UI_FRAMEWORK_NAME}/{module.UI_EXECUTABLE_NAME}"
+        )
+        if b"Build 846" in framework or b"aemotion.build848" in framework:
+            raise module.PackageError("stale framework Build 846/848 metadata remains")
+        if b"Build 850" not in framework or b"aemotion.build850" not in framework:
+            raise module.PackageError("Build 850 framework metadata is missing")
+
         app_info = plistlib.loads(archive.read(prefix + module.INFO_RELATIVE.as_posix()))
         if app_info.get("CFBundleDisplayName") != DIAGNOSTIC_DISPLAY_NAME:
             raise module.PackageError("Build 850 display name is missing")
@@ -121,11 +153,13 @@ def verify_output(output: Path) -> dict[str, object]:
     report["hostExecutableSectionsUnchanged"] = True
     report["uiLoadsBeforeAlightMotion"] = True
     report["rootControllerReplacement"] = False
+    report["frameworkBuildMetadataNormalized"] = True
     report["diagnosticDisplayName"] = DIAGNOSTIC_DISPLAY_NAME
     return report
 
 
 module.patch_main_executable = patch_main_executable
+module.copy_ui_framework = copy_ui_framework
 module.update_release_metadata = update_release_metadata
 module.verify_output = verify_output
 
