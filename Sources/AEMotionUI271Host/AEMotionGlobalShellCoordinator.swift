@@ -9,10 +9,10 @@ enum AEMotionGlobalShellCoordinator {
         let hostRoot: UIViewController
         let tabController: UITabBarController
         let selectedLeaf: UIViewController
-        let selectedTab: HomeShellTab
+        let selectedTab: AEMotionRootTab
     }
 
-    private static let controllerMarkers: [HomeShellTab: [String]] = [
+    private static let controllerMarkers: [AEMotionRootTab: [String]] = [
         .home: ["homevc", "homeviewvc"],
         .tutorials: ["tutorialsviewvc", "tutorialvc", "learning"],
         .projects: ["projectslistvc", "projectsvc"],
@@ -87,76 +87,20 @@ enum AEMotionGlobalShellCoordinator {
             return
         }
 
-        let shell = AEMotionShellViewController.shared
         let container = AEMotionRootContainerViewController(
             hostController: candidate.hostRoot,
-            shellController: shell
+            hostTabController: candidate.tabController,
+            initialTab: candidate.selectedTab
         )
-
-        configure(
-            shell: shell,
-            container: container,
-            tabController: candidate.tabController
-        )
-
         candidate.window.rootViewController = container
         candidate.window.backgroundColor = AEMotionProductTheme.canvas
         container.loadViewIfNeeded()
-        container.showShell(
-            tab: candidate.selectedTab,
-            showsHomeContent: candidate.selectedTab == .home
-        )
 
         installedWindow = candidate.window
         installedContainer = container
         stopInstallationObservers()
         AEMotionLaunchBrandingSanitizer.sanitizeNow()
         AEMotionLaunchOverlay.markShellReady()
-    }
-
-    private static func configure(
-        shell: AEMotionShellViewController,
-        container: AEMotionRootContainerViewController,
-        tabController: UITabBarController
-    ) {
-        shell.routeHandler = { tab in
-            guard tab != .create,
-                  let index = index(for: tab, in: tabController),
-                  let controllers = tabController.viewControllers,
-                  controllers.indices.contains(index) else { return }
-
-            tabController.selectedIndex = index
-            tabController.selectedViewController = controllers[index]
-            tabController.tabBar.isHidden = true
-            tabController.tabBar.isUserInteractionEnabled = false
-            container.showShell(tab: tab, showsHomeContent: tab == .home)
-        }
-
-        shell.actionHandler = { action in
-            let selected = tabController.selectedViewController
-                .map(visibleLeaf(from:))
-                ?? tabController
-            let selectedTab = selectedTab(for: selected) ?? .home
-            let adapter = AEMotionHostSurfaceAdapter(
-                controller: selected,
-                role: role(for: selectedTab)
-            )
-            adapter.prepareForRootPresentation()
-            _ = adapter.perform(action)
-        }
-
-        shell.settingsHandler = {
-            presentStoryboard(
-                named: "SettingsNC",
-                from: visibleLeaf(from: tabController)
-            )
-        }
-        shell.profileHandler = {
-            presentStoryboard(
-                named: "MyAccountVC",
-                from: visibleLeaf(from: tabController)
-            )
-        }
     }
 
     private static func preferredCandidate() -> WindowCandidate? {
@@ -255,34 +199,11 @@ enum AEMotionGlobalShellCoordinator {
         return controller
     }
 
-    private static func selectedTab(for controller: UIViewController) -> HomeShellTab? {
-        for tab in [HomeShellTab.home, .tutorials, .projects, .templates] {
+    private static func selectedTab(for controller: UIViewController) -> AEMotionRootTab? {
+        for tab in AEMotionRootTab.allCases {
             guard let markers = controllerMarkers[tab],
                   matches(controller: controller, markers: markers) else { continue }
             return tab
-        }
-        return nil
-    }
-
-    private static func index(
-        for tab: HomeShellTab,
-        in tabController: UITabBarController
-    ) -> Int? {
-        guard let controllers = tabController.viewControllers,
-              let markers = controllerMarkers[tab] else { return nil }
-        if let exact = controllers.firstIndex(where: {
-            matches(controller: $0, markers: markers)
-        }) {
-            return exact
-        }
-        if controllers.count == 4 {
-            switch tab {
-            case .home: return 0
-            case .tutorials: return 1
-            case .projects: return 2
-            case .templates: return 3
-            case .create: return nil
-            }
         }
         return nil
     }
@@ -338,30 +259,6 @@ enum AEMotionGlobalShellCoordinator {
             }
         }
         return false
-    }
-
-    private static func role(for tab: HomeShellTab) -> AEMotionHostSurfaceRole {
-        switch tab {
-        case .home, .tutorials, .create:
-            return .home
-        case .projects:
-            return .projects
-        case .templates:
-            return .templates
-        }
-    }
-
-    private static func presentStoryboard(
-        named name: String,
-        from presenter: UIViewController
-    ) {
-        guard presenter.presentedViewController == nil else { return }
-        let destination = UIStoryboard(name: name, bundle: .main)
-            .instantiateInitialViewController()
-        destination?.modalPresentationStyle = .fullScreen
-        if let destination {
-            presenter.present(destination, animated: true)
-        }
     }
 }
 #endif
