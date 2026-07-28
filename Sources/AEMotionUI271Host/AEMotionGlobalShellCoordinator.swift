@@ -8,6 +8,8 @@ enum AEMotionGlobalShellCoordinator {
         let window: UIWindow
         let hostRoot: UIViewController
         let tabController: UITabBarController
+        let leaf: UIViewController
+        let exactTab: HomeShellTab?
         let area: CGFloat
     }
 
@@ -18,10 +20,17 @@ enum AEMotionGlobalShellCoordinator {
         .templates: ["templateslistvc", "templatesshowcasevc", "templatesvc"],
     ]
 
+    private static let requiredStableCandidateCount = 6
     private static var hasStarted = false
     private static var observers: [NSObjectProtocol] = []
     private static var refreshGeneration = 0
     private static var adapters: [ObjectIdentifier: AEMotionHostSurfaceAdapter] = [:]
+    private static var stableWindowIdentifier: ObjectIdentifier?
+    private static var stableTabIdentifier: ObjectIdentifier?
+    private static var stableLeafIdentifier: ObjectIdentifier?
+    private static var stableCandidateCount = 0
+    private static weak var shellWindow: UIWindow?
+    private static var shellConstraints: [NSLayoutConstraint] = []
 
     static func start() {
         guard !hasStarted else {
@@ -32,7 +41,6 @@ enum AEMotionGlobalShellCoordinator {
 
         let center = NotificationCenter.default
         for name in [
-            UIApplication.didFinishLaunchingNotification,
             UIApplication.didBecomeActiveNotification,
             UIWindow.didBecomeVisibleNotification,
             UIWindow.didBecomeKeyNotification,
@@ -45,14 +53,17 @@ enum AEMotionGlobalShellCoordinator {
                 Task { @MainActor in scheduleRefreshBurst() }
             })
         }
-        scheduleRefreshBurst()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.50) {
+            scheduleRefreshBurst()
+        }
     }
 
     private static func scheduleRefreshBurst() {
         refreshGeneration += 1
         let generation = refreshGeneration
-        for attempt in 0..<160 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(attempt) * 0.10) {
+        for attempt in 0..<120 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35 + Double(attempt) * 0.15) {
                 guard generation == refreshGeneration else { return }
                 refreshVisibleShell()
             }
@@ -60,21 +71,35 @@ enum AEMotionGlobalShellCoordinator {
     }
 
     private static func refreshVisibleShell() {
-        guard let candidate = preferredCandidate(), isSafeToWrap(candidate) else { return }
-        let container = ensureRootContainer(
-            for: candidate.window,
-            hostRoot: candidate.hostRoot
-        )
-        let tabController = candidate.tabController
-        let leaf = tabController.selectedViewController.map { visibleLeaf(from: $0) }
-
-        if let leaf, shouldDetachShell(for: leaf, in: tabController) {
-            container.hideShell()
+        guard UIApplication.shared.applicationState == .active,
+              let candidate = preferredCandidate() else {
+            resetStableCandidate()
             return
         }
 
-        guard let tab = selectedTab(for: tabController, leaf: leaf) else {
-            container.hideShell()
+        if shellWindow == nil {
+            guard isHostWorkspaceReady(candidate) else {
+                resetStableCandidate()
+                return
+            }
+            recordStableCandidate(candidate)
+            guard stableCandidateCount >= requiredStableCandidateCount else { return }
+            attachShell(to: candidate.window)
+        } else if shellWindow !== candidate.window {
+            guard isHostWorkspaceReady(candidate) else { return }
+            recordStableCandidate(candidate)
+            guard stableCandidateCount >= requiredStableCandidateCount else { return }
+            attachShell(to: candidate.window)
+        }
+
+        let tabController = candidate.tabController
+        if shouldDetachShell(for: candidate.leaf, in: tabController) {
+            hideShell()
+            return
+        }
+
+        guard let tab = candidate.exactTab else {
+            hideShell()
             return
         }
 
@@ -83,7 +108,7 @@ enum AEMotionGlobalShellCoordinator {
         tabController.view.backgroundColor = AEMotionProductTheme.canvas
         candidate.window.backgroundColor = AEMotionProductTheme.canvas
 
-        let activeAdapter = leaf.flatMap { adapter(for: $0, tab: tab) }
+        let activeAdapter = adapter(for: candidate.leaf, tab: tab)
         activeAdapter?.prepareForRootPresentation()
 
         let shell = AEMotionShellViewController.shared
@@ -104,28 +129,167 @@ enum AEMotionGlobalShellCoordinator {
         shell.profileHandler = {
             presentStoryboard(named: "MyAccountVC", from: tabController)
         }
-        container.showShell(tab: tab, showsHomeContent: tab == .home)
+        shell.view.isHidden = false
+        shell.configure(tab: tab, showsHomeContent: tab == .home)
+        candidate.window.bringSubviewToFront(shell.view)
+        AEMotionLaunchBrandingSanitizer.sanitizeNow()
         AEMotionLaunchOverlay.markShellReady()
     }
 
-    private static func isSafeToWrap(_ candidate: WindowCandidate) -> Bool {
-        if candidate.window.rootViewController is AEMotionRootContainerViewController {
+    private static func preferredCandidate() -> WindowCandidate? {
+        let candidates: [WindowCandidate] = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .compactMap { window in
+                guard !window.isHidden,
+                      window.alpha > 0.01,
+                      window.windowLevel == .normal,
+                      let root = window.rootViewController,
+                      let tabController = findTabController(from: root),
+                      let selected = tabController.selectedViewController else { return nil }
+
+                let leaf = visibleLeaf(from: selected)
+                let exactTab = verifiedTab(for: leaf)
+                let area = window.bounds.width * window.bounds.height
+                return WindowCandidate(
+                    window: window,
+                    hostRoot: root,
+                    tabController: tabController,
+                    leaf: leaf,
+                    exactTab: exactTab,
+                    area: area
+                )
+            }
+
+        return candidates.max { left, right in
+            if left.window.isKeyWindow != right.window.isKeyWindow {
+                return !left.window.isKeyWindow && right.window.isKeyWindow
+            }
+            return left.area < right.area
+        }
+    }
+
+    private static func isHostWorkspaceReady(_ candidate: WindowCandidate) -> Bool {
+        let window = candidate.window
+        let tabController = candidate.tabController
+
+        guard window.isKeyWindow,
+              window.rootViewController === candidate.hostRoot,
+              tabController.viewIfLoaded?.window === window,
+              candidate.leaf.viewIfLoaded?.window === window,
+              !window.bounds.isEmpty,
+              tabController.viewControllers?.count ?? 0 >= 4,
+              candidate.exactTab != nil,
+              isVerifiedRootController(candidate.leaf),
+              candidate.hostRoot.presentedViewController == nil,
+              !candidate.hostRoot.isBeingPresented,
+              !candidate.hostRoot.isBeingDismissed,
+              !containsVisibleActivityIndicator(in: window),
+              !containsLaunchNamedController(from: candidate.hostRoot),
+              !hasBlockingLaunchOverlay(in: window, hostRoot: candidate.hostRoot) else {
+            return false
+        }
+        return true
+    }
+
+    private static func isVerifiedRootController(_ controller: UIViewController) -> Bool {
+        verifiedTab(for: controller) != nil
+    }
+
+    private static func verifiedTab(for controller: UIViewController) -> HomeShellTab? {
+        for tab in [HomeShellTab.home, .tutorials, .projects, .templates] {
+            guard let markers = controllerMarkers[tab] else { continue }
+            if matches(controller: controller, markers: markers) { return tab }
+        }
+        return nil
+    }
+
+    private static func recordStableCandidate(_ candidate: WindowCandidate) {
+        let windowID = ObjectIdentifier(candidate.window)
+        let tabID = ObjectIdentifier(candidate.tabController)
+        let leafID = ObjectIdentifier(candidate.leaf)
+        if stableWindowIdentifier == windowID,
+           stableTabIdentifier == tabID,
+           stableLeafIdentifier == leafID {
+            stableCandidateCount += 1
+            return
+        }
+        stableWindowIdentifier = windowID
+        stableTabIdentifier = tabID
+        stableLeafIdentifier = leafID
+        stableCandidateCount = 1
+    }
+
+    private static func resetStableCandidate() {
+        stableWindowIdentifier = nil
+        stableTabIdentifier = nil
+        stableLeafIdentifier = nil
+        stableCandidateCount = 0
+    }
+
+    private static func attachShell(to window: UIWindow) {
+        let shell = AEMotionShellViewController.shared
+        shell.loadViewIfNeeded()
+
+        if shell.view.superview !== window {
+            NSLayoutConstraint.deactivate(shellConstraints)
+            shellConstraints.removeAll()
+            shell.view.removeFromSuperview()
+            shell.view.translatesAutoresizingMaskIntoConstraints = false
+            window.addSubview(shell.view)
+            shellConstraints = [
+                shell.view.leadingAnchor.constraint(equalTo: window.leadingAnchor),
+                shell.view.trailingAnchor.constraint(equalTo: window.trailingAnchor),
+                shell.view.topAnchor.constraint(equalTo: window.topAnchor),
+                shell.view.bottomAnchor.constraint(equalTo: window.bottomAnchor),
+            ]
+            NSLayoutConstraint.activate(shellConstraints)
+        }
+        shellWindow = window
+        shell.view.isHidden = false
+        window.bringSubviewToFront(shell.view)
+    }
+
+    private static func hideShell() {
+        let shell = AEMotionShellViewController.shared
+        guard shell.isViewLoaded else { return }
+        shell.prepareForHiddenState()
+        shell.view.isHidden = true
+    }
+
+    private static func containsVisibleActivityIndicator(in view: UIView) -> Bool {
+        guard !view.isHidden, view.alpha > 0.01 else { return false }
+        if let indicator = view as? UIActivityIndicatorView,
+           indicator.isAnimating,
+           indicator.window != nil {
             return true
         }
-        return candidate.hostRoot.presentedViewController == nil
-            && !candidate.hostRoot.isBeingPresented
-            && !candidate.hostRoot.isBeingDismissed
-            && !hasBlockingLaunchOverlay(
-                in: candidate.window,
-                hostRoot: candidate.hostRoot
-            )
+        return view.subviews.contains(where: containsVisibleActivityIndicator)
+    }
+
+    private static func containsLaunchNamedController(from root: UIViewController) -> Bool {
+        var queue: [UIViewController] = [root]
+        var seen = Set<ObjectIdentifier>()
+        let launchMarkers = ["loading", "splash", "launch", "bootstrap"]
+        while !queue.isEmpty {
+            let controller = queue.removeFirst()
+            guard seen.insert(ObjectIdentifier(controller)).inserted else { continue }
+            let name = String(describing: type(of: controller)).lowercased()
+            if launchMarkers.contains(where: name.contains) { return true }
+            queue.append(contentsOf: controller.children)
+            if let presented = controller.presentedViewController,
+               !presented.isBeingDismissed {
+                queue.append(presented)
+            }
+        }
+        return false
     }
 
     private static func hasBlockingLaunchOverlay(
         in window: UIWindow,
         hostRoot: UIViewController
     ) -> Bool {
-        guard hostRoot.isViewLoaded else { return false }
+        guard hostRoot.isViewLoaded else { return true }
         let rootView = hostRoot.view!
         let windowArea = max(1, window.bounds.width * window.bounds.height)
 
@@ -141,58 +305,13 @@ enum AEMotionGlobalShellCoordinator {
                   view.isUserInteractionEnabled else { return false }
 
             let visibleFrame = view.convert(view.bounds, to: window).intersection(window.bounds)
-            let coverage: CGFloat
-            if visibleFrame.isNull || visibleFrame.isEmpty {
-                coverage = 0
-            } else {
-                coverage = (visibleFrame.width * visibleFrame.height) / windowArea
-            }
+            guard !visibleFrame.isNull, !visibleFrame.isEmpty else { return false }
+            let coverage = (visibleFrame.width * visibleFrame.height) / windowArea
             if coverage >= 0.55 { return true }
             return view.subviews.contains(where: containsBlockingOverlay)
         }
 
         return window.subviews.contains(where: containsBlockingOverlay)
-    }
-
-    private static func preferredCandidate() -> WindowCandidate? {
-        let candidates: [WindowCandidate] = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .compactMap { window in
-                guard !window.isHidden,
-                      window.alpha > 0.01,
-                      window.windowLevel == .normal,
-                      let root = window.rootViewController else { return nil }
-                let hostRoot = (root as? AEMotionRootContainerViewController)?.hostController ?? root
-                guard let tabController = findTabController(from: hostRoot) else { return nil }
-                let area = window.bounds.width * window.bounds.height
-                return WindowCandidate(
-                    window: window,
-                    hostRoot: hostRoot,
-                    tabController: tabController,
-                    area: area
-                )
-            }
-
-        return candidates.max { left, right in
-            if left.area == right.area {
-                return !left.window.isKeyWindow && right.window.isKeyWindow
-            }
-            return left.area < right.area
-        }
-    }
-
-    private static func ensureRootContainer(
-        for window: UIWindow,
-        hostRoot: UIViewController
-    ) -> AEMotionRootContainerViewController {
-        if let existing = window.rootViewController as? AEMotionRootContainerViewController {
-            return existing
-        }
-        let container = AEMotionRootContainerViewController(hostController: hostRoot)
-        window.rootViewController = container
-        container.loadViewIfNeeded()
-        return container
     }
 
     private static func findTabController(from root: UIViewController) -> UITabBarController? {
@@ -227,53 +346,11 @@ enum AEMotionGlobalShellCoordinator {
         return controller
     }
 
-    private static func selectedTab(
-        for tabController: UITabBarController,
-        leaf: UIViewController?
-    ) -> HomeShellTab? {
-        if let leaf {
-            for tab in [HomeShellTab.home, .tutorials, .projects, .templates] {
-                guard let markers = controllerMarkers[tab] else { continue }
-                if matches(controller: leaf, markers: markers) { return tab }
-            }
-        }
-
-        for tab in [HomeShellTab.home, .tutorials, .projects, .templates] {
-            if index(for: tab, in: tabController) == tabController.selectedIndex {
-                return tab
-            }
-        }
-        return nil
-    }
-
     private static func index(for tab: HomeShellTab, in tabController: UITabBarController) -> Int? {
         guard tab != .create,
               let controllers = tabController.viewControllers,
               let markers = controllerMarkers[tab] else { return nil }
-
-        if let exact = controllers.firstIndex(where: { matches(controller: $0, markers: markers) }) {
-            return exact
-        }
-
-        if controllers.count == 4 {
-            switch tab {
-            case .home: return 0
-            case .tutorials: return 1
-            case .projects: return 2
-            case .templates: return 3
-            case .create: return nil
-            }
-        }
-        if controllers.count >= 5 {
-            switch tab {
-            case .home: return 0
-            case .tutorials: return 1
-            case .projects: return 3
-            case .templates: return 4
-            case .create: return nil
-            }
-        }
-        return nil
+        return controllers.firstIndex(where: { matches(controller: $0, markers: markers) })
     }
 
     private static func matches(controller: UIViewController, markers: [String]) -> Bool {
