@@ -44,7 +44,7 @@ checks = {
 }
 
 failed = [name for name, (text, pattern) in checks.items() if re.search(pattern, text, re.S | re.I) is None]
-if re.search(r"window\.rootViewController\s*=", coordinator):
+if re.search(r"window\.rootViewController\s*=\s*(?!=)", coordinator):
     failed.append("root controller replacement remains")
 if failed:
     print("FAIL: " + ", ".join(failed))
