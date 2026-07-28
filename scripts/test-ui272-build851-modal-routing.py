@@ -19,7 +19,7 @@ required = {
     "dismiss callback once": r"didReportDismissal",
     "settings route state": r"presentModal\(\.settings\)",
     "account route state": r"presentModal\(\.account\)",
-    "dismiss route state": r"event:\s*\.dismissModal",
+    "dismiss route state": r"reduce\(\.dismissModal\)|event:\s*\.dismissModal",
 }
 
 failed = [name for name, pattern in required.items() if re.search(pattern, combined, re.S) is None]
